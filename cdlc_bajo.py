@@ -148,12 +148,13 @@ def construir_grid(beats, db, duracion):
         fase, confianza = 0, 0.0
     primero = fase % 4
     grid = beats[primero:]
-    pre, t = [], grid[0] - med
-    while t > 0.05:
-        pre.insert(0, t); t -= med
-    n_pre = len(pre) - (len(pre) % 4)
-    if n_pre:
-        grid = np.concatenate([pre[len(pre) - n_pre:], grid])
+    # extender hacia atrás con compases COMPLETOS hasta cubrir el segundo 0 (puede quedar en tiempo negativo:
+    # el silencio inicial que se añade al audio lo compensa). Así ninguna nota de la entrada se queda fuera.
+    n = 0
+    while grid[0] - n * med > 0 or n % 4:
+        n += 1
+    if n:
+        grid = np.concatenate([[grid[0] - k * med for k in range(n, 0, -1)], grid])
     while grid[-1] < duracion + med:
         grid = np.append(grid, grid[-1] + med)
     return grid, 60 / med, confianza
@@ -245,7 +246,7 @@ def cuantizar(notas, grid):
         s0 = int(round(pos(t0 + desfase) * 4)); s1 = max(s0 + 1, int(round(pos(t1 + desfase) * 4)))
         if s0 not in q or (s1 - s0) > (q[s0][1] - q[s0][0]):
             q[s0] = [s0, s1, p]
-    q = sorted(q.values())
+    q = sorted(v for v in q.values() if v[0] >= 0)    # seguridad: nada antes del grid
     for i in range(len(q) - 1):
         q[i][1] = min(q[i][1], q[i + 1][0])
     q = [x for x in q if x[1] > x[0]]

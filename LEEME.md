@@ -128,6 +128,8 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **1.1.1**: corregido el error "'list' argument must have no negative elements" en canciones
+  cuyo bajo entra antes del primer compás completo.
 - **1.1**: detección automática de afinación (10 afinaciones de 4 cuerdas), medición del desvío de
   afinación de la grabación (cents) con corrección al reconocer notas, e índice de púa/dedos (experimental).
 - **1.0**: primera versión.
