@@ -38,7 +38,20 @@ En `salida\<nombre de la canción>\`:
 | `<nombre>_AB.mp3` | **Con cascos**: izquierda = bajo real, derecha = tablatura sintetizada. |
 | `<nombre>_clics.mp3` | La canción con un clic en cada beat, más agudo en el tiempo 1. |
 | `<nombre>.mid` | La transcripción en MIDI. |
-| `informe.txt` | Tempo, número de notas, notas dudosas… |
+| `informe.txt` | **Afinación, referencia en cents y púa/dedos** (léelo primero), más tempo y notas dudosas. |
+
+### Lo que detecta solo (mira el informe)
+
+- **Afinación**: E estándar, Eb, Drop D, D, Drop C#, C#, Drop C, C, Drop B o B estándar. Se queda en
+  E estándar salvo que la canción tenga notas graves repetidas que no quepan; si las tiene, la nota
+  más grave fija la cuerda grave y la digitación decide entre "drop" y estándar. La afinación va
+  dentro del `.gp5`, así que EOF y DLC Builder la recogen solos. Solo tienes que reafinar el bajo.
+- **Referencia de afinación de la grabación** (cents): muchos discos no están exactamente a La = 440 Hz.
+  El informe te dice qué poner en **Tuning Pitch** en DLC Builder para que el afinador de Rocksmith
+  te deje empastado con el disco. Además, el script descuenta ese desvío al reconocer las notas.
+- **Púa o dedos** (experimental): mide el "clic" agudo del ataque de cada nota. Los umbrales todavía
+  son provisionales, así que da veredicto solo cuando el valor es claro. Si es púa, márcalo en EOF
+  (**Track → Rocksmith → Picked Bass**) o en la casilla **Picked** de DLC Builder.
 
 ### Revisión rápida antes de montar el CDLC
 
@@ -66,6 +79,8 @@ Crea siempre un **proyecto nuevo** por canción y sigue este orden:
 1. **Add** el XML que guardó EOF, del tipo `PART REAL_BASS_RS2.xml`, de la carpeta del proyecto.
 2. Audio: el `guitar.ogg` de la carpeta del proyecto de EOF. **Create** para la vista previa.
 3. Tono: *A new tone* sirve. Asígnalo como tono base del bajo.
+   En la ficha del arreglo, ajusta **Tuning Pitch** si el informe lo indica, y **Picked** si es con púa.
+   Comprueba que la afinación que muestra el arreglo coincide con la del informe.
 4. Si sale *"The first phrase contains notes"*, puedes darle a **Ignore**: DLC Builder crea las frases solo.
 5. Configuración (engranaje) → **Build**: deja marcado **Generate DD levels**. Sin DD, Rocksmith no
    guarda el porcentaje ni la evolución de la canción.
@@ -81,7 +96,7 @@ Para tocar todas las notas desde el principio sin perder el seguimiento:
 
 ## 5. Limitaciones
 
-- Bajo de **4 cuerdas, afinación estándar (Mi-La-Re-Sol)** y compás de **4/4**.
+- Bajo de **4 cuerdas** y compás de **4/4**. Afinaciones: las diez de la lista de arriba.
 - La transcripción es automática: ritmo y notas salen bien en general, pero puede haber notas
   sueltas de más o de menos. Repasa con el A/B y corrige en EOF o en Guitar Pro / TuxGuitar.
 - No detecta técnicas (slides, ligados, slap…): todo sale como notas normales.
@@ -97,8 +112,10 @@ Para tocar todas las notas desde el principio sin perder el seguimiento:
    con una CQT con suma de armónicos.
 4. **Cuantización** a semicorcheas sobre el grid de beats, con corrección automática del desfase
    entre ataque detectado y pulso.
-5. **Digitación**: programación dinámica que minimiza el movimiento de la mano.
-6. **Salidas**: `.gp5` con PyGuitarPro, mapa de beats en formato Sonic Visualiser y audio con ffmpeg.
+5. **Afinación y digitación**: se elige la afinación como se explica arriba, y la digitación se hace
+   con programación dinámica que minimiza el movimiento de la mano.
+6. **Púa**: contraste de energía entre 2 y 8 kHz entre el ataque (0-45 ms) y el sostenido (80-200 ms).
+7. **Salidas**: `.gp5` con PyGuitarPro, mapa de beats en formato Sonic Visualiser y audio con ffmpeg.
 
 Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
@@ -108,3 +125,9 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 - **"No encuentro uv"**: cierra la ventana y vuelve a abrir `procesar.bat`. Si sigue, ejecuta otra vez `instalar.bat`.
 - **Una canción da ERROR**: el resto del lote sigue procesándose. El motivo sale al final, en el resumen.
 - **"tiempo 1 dudoso"**: puede que el compás empiece desplazado. Compruébalo con el archivo de clics.
+
+## Historial
+
+- **1.1**: detección automática de afinación (10 afinaciones de 4 cuerdas), medición del desvío de
+  afinación de la grabación (cents) con corrección al reconocer notas, e índice de púa/dedos (experimental).
+- **1.0**: primera versión.

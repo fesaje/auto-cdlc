@@ -43,8 +43,22 @@ MODELO_BAJO = "kuielab_b_bass.onnx"
 PYIN_MIN_PROB = 0.3        # confianza mínima de pYIN; por debajo decide la CQT
 ENERGIA_MIN_DB = -40       # notas más flojas que esto (respecto al pico) se ignoran
 DUR_MIN = 0.04             # s
-AFINACION = [43, 38, 33, 28]   # G2 D2 A1 E1 (cuerda 1 = la más aguda, convención Guitar Pro)
 TRASTE_MAX = 20
+# Afinaciones de bajo de 4 cuerdas: (nombre, cuerdas de grave a aguda en MIDI, penalización a priori)
+AFINACIONES = [
+    ("E estándar",  [28, 33, 38, 43], 0.00),
+    ("Eb estándar", [27, 32, 37, 42], 0.05),
+    ("Drop D",      [26, 33, 38, 43], 0.05),
+    ("D estándar",  [26, 31, 36, 41], 0.08),
+    ("Drop C#",     [25, 32, 37, 42], 0.10),
+    ("C# estándar", [25, 30, 35, 40], 0.10),
+    ("Drop C",      [24, 31, 36, 41], 0.10),
+    ("C estándar",  [24, 29, 34, 39], 0.12),
+    ("Drop B",      [23, 30, 35, 40], 0.12),
+    ("B estándar",  [23, 28, 33, 38], 0.15),
+]
+# Índice de púa (contraste agudo ataque/sostenido, dB). Umbrales PROVISIONALES, sin calibrar con datos etiquetados.
+PUA_SI_DB, PUA_NO_DB = 12.0, 6.0
 SPM = 16                   # semicorcheas por compás (4/4)
 MARGEN_INICIAL = 0.5       # s de silencio antes del compás COUNT
 BPM_MIN, BPM_MAX = 60, 180
@@ -155,13 +169,22 @@ def transcribir(bajo_wav):
     f0, _, vp = librosa.pyin(y, fmin=30, fmax=500, sr=SR, hop_length=HOP, frame_length=2048)
     tiempos = librosa.times_like(f0, sr=SR, hop_length=HOP)
     rms_db = librosa.amplitude_to_db(librosa.feature.rms(y=y, hop_length=HOP, frame_length=2048)[0], ref=1.0)
-    FMIN = 24
-    C = np.abs(librosa.cqt(y, sr=SR, hop_length=HOP, fmin=librosa.midi_to_hz(FMIN), n_bins=72, bins_per_octave=12))
     pico = rms_db.max()
+
+    # desvío de afinación de la grabación respecto a La=440 (cents), con los tramos de pitch fiable
+    fiable = (~np.isnan(f0)) & (vp > 0.5)
+    if fiable.sum() > 50:
+        m = librosa.hz_to_midi(f0[fiable]); z = np.mean(np.exp(2j * np.pi * (m - np.round(m))))
+        cents = float(np.angle(z) / (2 * np.pi) * 100)
+    else:
+        cents = 0.0
+    FMIN = 21
+    C = np.abs(librosa.cqt(y, sr=SR, hop_length=HOP, fmin=librosa.midi_to_hz(FMIN + cents / 100),
+                           n_bins=72, bins_per_octave=12))
 
     def nota_cqt(idx):
         spec = C[:, idx].mean(axis=1); mejor, nota = -1, None
-        for p in range(28, 60):
+        for p in range(23, 60):
             b = p - FMIN
             s = spec[b] + 0.6 * spec[b + 12] + 0.4 * spec[b + 19] + 0.3 * spec[b + 24]
             if s > mejor: mejor, nota = s, p
@@ -181,13 +204,33 @@ def transcribir(bajo_wav):
         if t1 - t0 < DUR_MIN: continue
         ok = (~np.isnan(f0[idx])) & (vp[idx] > PYIN_MIN_PROB)
         if ok.sum() >= 2:
-            p = int(round(librosa.hz_to_midi(np.median(f0[idx][ok]))))
+            p = int(round(librosa.hz_to_midi(np.median(f0[idx][ok])) - cents / 100))
         else:
             p = nota_cqt(idx[:max(4, len(idx) // 2)]); n_cqt += 1
-        while p < AFINACION[-1]: p += 12                 # por debajo del Mi grave: octava arriba
-        if p <= AFINACION[0] + TRASTE_MAX:
+        if 20 <= p <= 43 + TRASTE_MAX:
             notas.append((float(t0), float(t1), p))
-    return y, notas, len(ataques), n_cqt
+    return y, notas, len(ataques), n_cqt, cents, indice_pua(y)
+
+
+def indice_pua(y):
+    """Contraste de energía aguda (2-8 kHz) entre el ataque (0-45 ms) y el sostenido (80-200 ms), en dB.
+    La púa produce un 'clic' brillante y corto al pulsar; los dedos, mucho menos."""
+    import librosa
+    hop = 64; fr = SR / hop                       # ventana de 23 ms: no emborronar el ataque
+    S = np.abs(librosa.stft(y, n_fft=512, hop_length=hop)) ** 2
+    fq = librosa.fft_frequencies(sr=SR, n_fft=512)
+    hf = S[(fq >= 2000) & (fq < 8000)].sum(0)
+    # picos de ataque (sin retroceder: el retroceso cae ~60 ms antes del golpe), ventana desde 10 ms antes
+    picos = librosa.onset.onset_detect(y=y, sr=SR, hop_length=256, backtrack=False, units="time")
+    ini = ((np.asarray(picos) - 0.01) * fr).astype(int)
+    ini = ini[ini >= 0]
+    wa, s0, s1 = int(0.045 * fr), int(0.08 * fr), int(0.2 * fr)
+    vals = []
+    for i, o in enumerate(ini):
+        fin = ini[i + 1] if i + 1 < len(ini) else len(hf)
+        if fin - o < s1: continue
+        vals.append(10 * np.log10((hf[o:o + wa].mean() + 1e-12) / (hf[o + s0:o + s1].mean() + 1e-12)))
+    return float(np.median(vals)) if len(vals) >= 20 else float("nan")
 
 
 # ---------------- 4. cuantización + digitación ----------------
@@ -210,11 +253,47 @@ def cuantizar(notas, grid):
     return q, desfase, ambiguas
 
 
-def digitar(q):
+def ajustar_a_rango(q, cuerdas):
+    """Sube/baja de octava las notas que no caben en el mástil con esta afinación (cuerdas de grave a aguda)."""
+    out, movidas = [], 0
+    for s0, s1, p in q:
+        p2 = p
+        while p2 < cuerdas[0]: p2 += 12
+        while p2 > cuerdas[-1] + TRASTE_MAX: p2 -= 12
+        movidas += p2 != p
+        out.append([s0, s1, p2])
+    return out, movidas
+
+
+def elegir_afinacion(q):
+    """Afinación de 4 cuerdas: E estándar salvo que haya notas graves que lo impidan de forma repetida.
+    Si las hay, la nota más grave repetida fija la cuerda grave; entre 'drop' y estándar decide la digitación."""
+    pitches = np.array([p for _, _, p in q])
+    umbral = max(3, int(0.005 * len(pitches)))
+    cuenta = {p: int((pitches == p).sum()) for p in np.unique(pitches)}
+    graves = [p for p in sorted(cuenta) if cuenta[p] >= umbral]
+    L = graves[0] if graves else int(pitches.min())
+    if L >= 28:
+        candidatas = [a for a in AFINACIONES if a[0] == "E estándar"]
+    else:
+        candidatas = [a for a in AFINACIONES if a[1][0] == L] or [a for a in AFINACIONES if a[1][0] == 23]
+    mejor = None
+    for nombre, cuerdas, prior in candidatas:
+        qa, movidas = ajustar_a_rango(q, cuerdas)
+        tab, coste = digitar(qa, list(reversed(cuerdas)))
+        puntos = coste / max(1, len(qa)) + prior
+        if mejor is None or puntos < mejor[0]:
+            mejor = (puntos, nombre, cuerdas, tab, movidas)
+    _, nombre, cuerdas, tab, movidas = mejor
+    return nombre, cuerdas, tab, movidas, L
+
+
+def digitar(q, afinacion):
+    """afinacion: cuerdas de aguda a grave (cuerda 1 = la más aguda, convención Guitar Pro). Devuelve (tab, coste)."""
     capas, prev = [], None
     for _, _, p in q:
         capa = []
-        for s, o in enumerate(AFINACION):
+        for s, o in enumerate(afinacion):
             f = p - o
             if not 0 <= f <= TRASTE_MAX: continue
             if prev is None:
@@ -225,11 +304,12 @@ def digitar(q):
                 if c < bc: bc, bi = c, j
             capa.append([bc, f, s + 1, bi])
         capas.append(capa); prev = capa
-    camino, j = [], int(np.argmin([x[0] for x in capas[-1]]))
+    j = int(np.argmin([x[0] for x in capas[-1]])); coste = capas[-1][j][0]
+    camino = []
     for capa in reversed(capas):
         _, f, s, bp = capa[j]; camino.append((s, f)); j = max(bp, 0)
     camino.reverse()
-    return [[q[i][0], q[i][1], q[i][2], camino[i][0], camino[i][1]] for i in range(len(q))]
+    return [[q[i][0], q[i][1], q[i][2], camino[i][0], camino[i][1]] for i in range(len(q))], coste
 
 
 # ---------------- 5. salidas ----------------
@@ -244,12 +324,12 @@ def escribir_svl(ruta, beats):
         f.write('    </dataset>\n  </data>\n</sv>\n')
 
 
-def escribir_gp5(ruta, tab, n_compases, tempos, artista, titulo):
+def escribir_gp5(ruta, tab, n_compases, tempos, artista, titulo, cuerdas):
     import guitarpro
     from guitarpro import models as gp
     song = gp.Song(); song.title = titulo; song.artist = artista; song.tempo = tempos[0]
     pista = song.tracks[0]; pista.name = "Bajo"; pista.channel.instrument = 33
-    pista.strings = [gp.GuitarString(i + 1, v) for i, v in enumerate(AFINACION)]; pista.fretCount = 24
+    pista.strings = [gp.GuitarString(i + 1, v) for i, v in enumerate(reversed(cuerdas))]; pista.fretCount = 24
     h0 = song.measureHeaders[0]; h0.timeSignature.numerator = 4; h0.timeSignature.denominator.value = 4
     while len(song.measureHeaders) < n_compases:
         h = gp.MeasureHeader(); h.number = len(song.measureHeaders) + 1
@@ -308,12 +388,12 @@ def procesar(ruta, salida, forzar):
         beats, db = detectar_beats(mezcla_mono)
         grid, bpm, conf = construir_grid(beats, db, duracion)
         log("  [3/5] Transcribiendo notas...")
-        y, notas, n_ataques, n_cqt = transcribir(bajo)
+        y, notas, n_ataques, n_cqt, cents, pua = transcribir(bajo)
         if not notas:
             raise RuntimeError("no se ha detectado ninguna nota de bajo")
         log("  [4/5] Cuantizando y digitando...")
         q, desfase, ambiguas = cuantizar(notas, grid)
-        tab = digitar(q)
+        afin_nombre, cuerdas, tab, movidas, nota_grave = elegir_afinacion(q)
 
         # compás COUNT delante + silencio inicial
         med = float(np.median(np.diff(grid)))
@@ -329,7 +409,7 @@ def procesar(ruta, salida, forzar):
 
         log("  [5/5] Escribiendo archivos...")
         escribir_svl(dest / f"{nombre}.svl", completo)
-        n_gp = escribir_gp5(dest / f"{nombre}.gp5", tab, n_compases, tempos, artista, titulo)
+        n_gp = escribir_gp5(dest / f"{nombre}.gp5", tab, n_compases, tempos, artista, titulo, cuerdas)
         cola = max(3.0, completo[-1] - (duracion + pad) + 1.0)
         pad_ms = int(round(pad * 1000))
         ffmpeg("-i", str(mezcla), "-af", f"adelay={pad_ms}|{pad_ms},apad=pad_dur={cola:.2f}",
@@ -361,7 +441,35 @@ def procesar(ruta, salida, forzar):
         ffmpeg("-i", str(tmp / "clics.wav"), "-b:a", "192k", str(dest / f"{nombre}_clics.mp3"))
 
     per = np.bincount(np.array([n[0] for n in tab]) // SPM)
-    informe = (f"Canción: {artista} - {titulo}\nArchivo: {ruta.name}\n"
+    nom = lambda m: pretty_midi.note_number_to_name(int(m)).replace("#", "#")
+    # --- afinación ---
+    txt_afin = (f"AFINACIÓN: {afin_nombre}  (cuerdas {' '.join(nom(c) for c in cuerdas)})\n"
+                f"  Nota grave repetida más baja: {nom(nota_grave)}"
+                + (f" | {movidas} notas sueltas cambiadas de octava para que quepan" if movidas else "") + "\n")
+    if afin_nombre != "E estándar":
+        txt_afin += ("  -> Ya va en el .gp5: EOF y DLC Builder la recogen solos. Reafina el bajo antes de tocar;\n"
+                     "     el afinador de Rocksmith te la pedirá al empezar la canción.\n")
+    # --- desvío en cents ---
+    la = 440 * 2 ** (cents / 1200)
+    txt_cents = f"REFERENCIA DE AFINACIÓN DE LA GRABACIÓN: {cents:+.0f} cents (La = {la:.1f} Hz)\n"
+    if abs(cents) >= 5:
+        txt_cents += (f"  -> En DLC Builder, ficha del arreglo, pon 'Tuning Pitch' a {la:.2f} (o {cents:+.0f} cents)\n"
+                      "     para que el afinador de Rocksmith te deje empastado con el disco.\n")
+    else:
+        txt_cents += "  -> Prácticamente a 440 Hz: no hace falta tocar nada.\n"
+    # --- púa ---
+    if np.isnan(pua):
+        veredicto = "sin datos suficientes"
+    elif pua >= PUA_SI_DB:
+        veredicto = "PROBABLEMENTE CON PÚA"
+    elif pua <= PUA_NO_DB:
+        veredicto = "probablemente con dedos"
+    else:
+        veredicto = "dudoso (escúchalo tú)"
+    txt_pua = (f"PÚA O DEDOS: {veredicto}  [índice {pua:.1f} dB; púa >= {PUA_SI_DB:.0f}, dedos <= {PUA_NO_DB:.0f}, umbrales provisionales]\n"
+               "  -> Si es con púa: en EOF, Track > Rocksmith > Picked Bass (o la casilla 'Picked' en DLC Builder).\n")
+    informe = (f"Canción: {artista} - {titulo}\nArchivo: {ruta.name}\n\n"
+               + txt_afin + txt_cents + txt_pua + "\n"
                f"Tempo mediano: {bpm:.1f} BPM | confianza del tiempo 1: {conf*100:.0f}%\n"
                f"Ataques detectados: {n_ataques} | notas: {len(notas)} (resueltas por CQT: {n_cqt}) | "
                f"en la tablatura: {n_gp}\n"
@@ -371,7 +479,9 @@ def procesar(ruta, salida, forzar):
                f"Tiempo de proceso: {time.time()-t_ini:.0f} s\n")
     (dest / "informe.txt").write_text(informe, encoding="utf-8")
     aviso = "  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics" if conf < 0.6 else ""
-    log(f"  OK: {n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%{aviso}")
+    extra = f" | {afin_nombre}" + (f" | {cents:+.0f} cents" if abs(cents) >= 5 else "") + \
+            (" | púa" if veredicto.startswith("PROB") else "")
+    log(f"  OK: {n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%{extra}{aviso}")
     return True
 
 
