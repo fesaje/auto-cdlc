@@ -32,9 +32,11 @@ En `salida\<nombre de la canción>\`:
 
 | Archivo | Para qué |
 |---|---|
-| `<nombre>.ogg` | El audio con silencio al principio, para el compás de cuenta (COUNT). **Es el que se abre en EOF.** |
-| `<nombre>.svl` | El mapa de beats: las marcas de tiempo siguen a la banda aunque acelere o frene. |
-| `<nombre>.gp5` | La tablatura de bajo (Guitar Pro 5). El compás 1 va vacío: es el COUNT. |
+| `<nombre>.rs2dlc` | **Proyecto de DLC Builder listo para compilar.** Es lo único que tienes que abrir. |
+| `<nombre>_bass_RS2.xml` | El arreglo de bajo en formato Rocksmith (lo usa el proyecto). |
+| `<nombre>_preview.ogg`, `portada.png` | Vista previa de 28 s y portada (la del mp3 o una generada). |
+| `<nombre>.ogg` | El audio con silencio al principio, para el compás de cuenta (COUNT). |
+| `<nombre>.svl`, `<nombre>.gp5` | Mapa de beats y tablatura, solo si quieres retocar la canción en EOF (ver más abajo). |
 | `<nombre>_AB.mp3` | **Con cascos**: izquierda = bajo real, derecha = tablatura sintetizada. |
 | `<nombre>_clics.mp3` | La canción con un clic en cada beat, más agudo en el tiempo 1. |
 | `<nombre>.mid` | La transcripción en MIDI. |
@@ -46,11 +48,17 @@ En `salida\<nombre de la canción>\`:
   E estándar salvo que la canción tenga notas graves repetidas que no quepan; si las tiene, la nota
   más grave fija la cuerda grave y la digitación decide entre "drop" y estándar. La afinación va
   dentro del `.gp5`, así que EOF y DLC Builder la recogen solos. Solo tienes que reafinar el bajo.
+- **Compases irregulares**: el "uno" se sigue compás a compás. Si en algún pasaje hay un compás de 2, 3,
+  5 o 6 tiempos, el script lo detecta, lo pone así en el `.gp5` y la canción vuelve a cuadrar después.
+  El informe dice en qué compases están. En EOF, acepta importar los compases (*time signatures*).
+  Si la rotura es ambigua, puede quedar colocada un compás antes o después de donde está en realidad;
+  las notas suenan igual en su sitio, solo cambia por dónde pasa la barra de compás.
 - **Referencia de afinación de la grabación** (cents): muchos discos no están exactamente a La = 440 Hz.
   El informe te dice qué poner en **Tuning Pitch** en DLC Builder para que el afinador de Rocksmith
   te deje empastado con el disco. Además, el script descuenta ese desvío al reconocer las notas.
-- **Púa o dedos** (experimental): mide el "clic" agudo del ataque de cada nota. Los umbrales todavía
-  son provisionales, así que da veredicto solo cuando el valor es claro. Si es púa, márcalo en EOF
+- **Púa o dedos**: mide el "clic" agudo del ataque de cada nota. A partir de 7 dB, púa; por debajo,
+  dedos. Umbral calibrado con canciones conocidas; si sale a menos de 1 dB del umbral, el informe avisa
+  para que lo compruebes de oído. Si es púa, márcalo en EOF
   (**Track → Rocksmith → Picked Bass**) o en la casilla **Picked** de DLC Builder.
 
 ### Revisión rápida antes de montar el CDLC
@@ -63,7 +71,18 @@ En `salida\<nombre de la canción>\`:
 
 ## 4. Montar el CDLC
 
-### En Editor on Fire
+### Camino rápido: directo a DLC Builder (sin EOF)
+
+1. Abre el `.rs2dlc` en DLC Builder: **Project → Open Project…**, o arrástralo a su ventana.
+   Ya trae el arreglo, el audio, la vista previa, la portada, la afinación, el *Tuning Pitch*, la púa y un tono de bajo.
+2. Pulsa **Build Test** o **Build Release**.
+
+Deja marcado **Generate DD levels** en la configuración. Las frases y secciones las crea DLC Builder solo al compilar.
+Si el informe dice "con problemas", es que el proyecto no pasaría las comprobaciones de DLC Builder. Avísame.
+
+### Camino con retoques: pasando por Editor on Fire
+
+Si una canción necesita correcciones (notas de más o de menos que oyes en el A/B), móntala en EOF:
 
 Crea siempre un **proyecto nuevo** por canción y sigue este orden:
 
@@ -74,7 +93,7 @@ Crea siempre un **proyecto nuevo** por canción y sigue este orden:
 5. Opcional: **Edit → Metronome** y **Edit → Claps** para comprobarlo de oído.
 6. Guarda. El aviso de *fret hand positions* es normal: dale a Aceptar y EOF las genera solo.
 
-### En DLC Builder
+### En DLC Builder (si has pasado por EOF)
 
 1. **Add** el XML que guardó EOF, del tipo `PART REAL_BASS_RS2.xml`, de la carpeta del proyecto.
 2. Audio: el `guitar.ogg` de la carpeta del proyecto de EOF. **Create** para la vista previa.
@@ -96,7 +115,8 @@ Para tocar todas las notas desde el principio sin perder el seguimiento:
 
 ## 5. Limitaciones
 
-- Bajo de **4 cuerdas** y compás de **4/4**. Afinaciones: las diez de la lista de arriba.
+- Bajo de **4 cuerdas**. Compás de base 4/4, con compases sueltos de 2, 3, 5 o 6 tiempos; no sirve para
+  canciones enteras en 3/4 o 6/8. Afinaciones: las diez de la lista de arriba.
 - La transcripción es automática: ritmo y notas salen bien en general, pero puede haber notas
   sueltas de más o de menos. Repasa con el A/B y corrige en EOF o en Guitar Pro / TuxGuitar.
 - No detecta técnicas (slides, ligados, slap…): todo sale como notas normales.
@@ -128,6 +148,16 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **1.3.1**: el informe da el minuto de cada compás irregular y sus textos reflejan que afinación,
+  Tuning Pitch y púa ya van dentro del proyecto.
+- **1.3**: el script genera directamente el XML del arreglo y el proyecto de DLC Builder (`.rs2dlc`) con
+  portada, vista previa y volumen automático. Ya no hace falta pasar por EOF.
+- **1.2**: compases irregulares (2/4, 3/4, 5/4, 6/4) detectados compás a compás; ya no se descoloca
+  el resto de la canción tras un pasaje que rompe el compás.
+- **1.1.3**: umbral de púa calibrado en 7 dB.
+- **1.1.2**: en tempos rápidos (unos 140 BPM o más) la tablatura podía salir desplazada una semicorchea;
+  corregido. La afinación grave solo se elige si el detector principal (pYIN) ve notas graves repetidas,
+  para evitar falsos Eb/B por errores de octava.
 - **1.1.1**: corregido el error "'list' argument must have no negative elements" en canciones
   cuyo bajo entra antes del primer compás completo.
 - **1.1**: detección automática de afinación (10 afinaciones de 4 cuerdas), medición del desvío de
