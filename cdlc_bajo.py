@@ -35,12 +35,13 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.3"
+VERSION = "2.3.2"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
+DD_INICIAL = 0            # % de notas del nivel más fácil; configuracion.txt: dificultad_inicial
 DD_MODO = "propia"        # propia | dlcbuilder | ninguna; configuracion.txt: dificultad
 UMBRAL_CENTS = 30.0       # desvío mínimo (cents) para cambiar el Tuning Pitch; configuracion.txt: umbral_cents
 EXTENSIONES = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma"}
@@ -939,6 +940,16 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
                 v = [i for i in idx if nivel_nota[i] <= d]
                 if v and (not versiones or v != versiones[-1]):
                     versiones.append(v)
+            if DD_INICIAL > 0 and idx:
+                # dificultad inicial: cinco escalones desde el % pedido hasta la frase completa. Las notas
+                # entran por importancia rítmica (compás, medio compás, tiempo, corchea) y, a igualdad,
+                # las más largas primero
+                orden = sorted(idx, key=lambda i: (nivel_nota[i], -(tab[i][1] - tab[i][0]), i))
+                versiones = []
+                for f in np.linspace(DD_INICIAL / 100, 1.0, len(NIVELES_DD)):
+                    v = sorted(orden[:max(1, int(np.ceil(f * len(idx))))])
+                    if not versiones or v != versiones[-1]:
+                        versiones.append(v)
             if not versiones:
                 versiones = [[]]
             # frases que se repiten (estribillo, estrofa...) comparten nombre y Rocksmith suma su progreso.
@@ -969,7 +980,7 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
             nivel_notas = []
             for j, i in enumerate(sel):
                 t, cu, f, sus = notas[i]
-                if d < n_niveles - 1 and d <= 1 and j + 1 < len(sel):
+                if d < n_niveles - 1 and len(sel) < 0.45 * len(notas) and j + 1 < len(sel):
                     # en los niveles de pocas notas, la nota se mantiene hasta la siguiente (máx. medio compás)
                     hueco = notas[sel[j + 1]][0] - t
                     medio = 2 * 60.0 / max(tempo_medio_aprox(beats, t), 1)
@@ -1041,7 +1052,7 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     w("  </levels>")
     w("</song>")
     Path(ruta).write_text("\n".join(L) + "\n", encoding="utf-8")
-    DIAG["dificultad"] = {"modo": DD_MODO, "niveles": len(niveles),
+    DIAG["dificultad"] = {"modo": DD_MODO, "inicial_pct": DD_INICIAL, "niveles": len(niveles),
                           "notas_por_nivel": [len(n) for n in niveles],
                           "frases_distintas": len(frases) - 2, "repeticiones_de_frase": len(iteraciones) - 2,
                           "secciones": len(secciones),
@@ -1278,10 +1289,14 @@ def procesar(ruta, salida, forzar):
         meta = {"artista": artista, "titulo": titulo, **album_y_anio(ruta)}
         caratula = None if SIN_INTERNET else buscar_caratula(artista, titulo)
         if caratula:
-            if caratula["album"] and (not meta["album"] or
-                                      _normalizar(meta["album"]) == _normalizar(caratula["album"])):
-                meta["album"] = caratula["album"]   # mismo disco: se queda la grafía de la tienda (con acentos)
-            if meta.get("year_de_etiqueta") is False and caratula["year"]:
+            # carátula, álbum y año salen del mismo disco (el original que eligió la búsqueda), para que no
+            # aparezca la portada de un disco con el nombre y el año de otro (p. ej. un recopilatorio)
+            DIAG.setdefault("caratula", {})["album_de_etiqueta"] = f'{meta["album"]} ({meta["year"]})'
+            if caratula["album"]:
+                meta["album"] = caratula["album"]
+                if caratula["year"]:
+                    meta["year"] = caratula["year"]
+            elif meta.get("year_de_etiqueta") is False and caratula["year"]:
                 meta["year"] = caratula["year"]
         duracion_ogg = sf.info(str(dest / f"{nombre}.ogg")).duration
         xml_path = dest / f"{nombre}_bass_RS2.xml"
@@ -1480,7 +1495,7 @@ class Registro:
             import json
             self.cabecera += "Versiones: " + json.dumps(versiones(), ensure_ascii=False) + "\n"
             self.cabecera += (f"Configuración: psarc={'si' if COMPILAR else 'no'} | carpeta={CARPETA_PSARC} | "
-                              f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} | "
+                              f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} (inicial {DD_INICIAL:.0f} %) | "
                               f"wwise={WWISE or 'automático'}\n")
         except Exception:
             pass
@@ -1526,15 +1541,16 @@ def main():
     ap.add_argument("--sin-psarc", action="store_true", help="no compilar: deja sólo el proyecto .rs2dlc")
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     a = ap.parse_args()
-    global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO
+    global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
     conf = leer_configuracion()
     try:
         UMBRAL_CENTS = float(conf.get("umbral_cents", UMBRAL_CENTS))
         dd = conf.get("dificultad", DD_MODO).strip().lower()
         DD_MODO = {"propia": "propia", "dlcbuilder": "dlcbuilder", "dlc builder": "dlcbuilder",
                    "ninguna": "ninguna", "no": "ninguna"}.get(dd, "propia")
+        DD_INICIAL = min(95.0, max(0.0, float(str(conf.get("dificultad_inicial", DD_INICIAL)).replace("%", "").strip())))
     except ValueError:
-        log("Aviso: umbral_cents no es un número en configuracion.txt; uso 30")
+        log("Aviso: umbral_cents o dificultad_inicial no es un número en configuracion.txt; reviso los valores por defecto")
     CARPETA_PSARC = Path(a.psarc or conf.get("carpeta_psarc") or (AQUI / "psarc"))
     WWISE = a.wwise or conf.get("wwise") or None
     COMPILAR = not (a.sin_psarc or conf.get("compilar_psarc", "si").lower() in ("no", "false", "0"))

@@ -148,6 +148,10 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.3.2**: carátula, álbum y año salen siempre del mismo disco (antes podía salir la portada del
+  disco original con el nombre y el año del recopilatorio que traían las etiquetas).
+- **2.3.1**: `dificultad_inicial` en `configuracion.txt`: la DD propia empieza con ese % de notas de cada
+  frase (por ejemplo 60) y sube en cinco escalones hasta la completa.
 - **2.3**: arreglado un corrimiento de toda la tablatura una semicorchea en algunas canciones (las notas
   del tiempo y del "y" caían en la "e" y la "a"). Las frases repetidas se reconocen aunque la
   transcripción no salga idéntica, así comparten progreso de verdad. Etiquetas de descargas de YouTube

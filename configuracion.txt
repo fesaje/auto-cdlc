@@ -25,3 +25,8 @@ umbral_cents = 30
 #   dlcbuilder = la que genera DLC Builder (la de antes)
 #   ninguna    = sin DD: siempre la canción completa, pero Rocksmith no muestra porcentaje
 dificultad = propia
+
+# Dificultad inicial (solo con dificultad = propia): % de notas con el que empieza cada frase.
+#   0  = desde lo más sencillo (una nota por compás)
+#   60 = empieza ya con al menos el 60 % de las notas de cada frase (se quitan los niveles más fáciles)
+dificultad_inicial = 0
