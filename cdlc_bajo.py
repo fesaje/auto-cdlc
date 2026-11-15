@@ -18,6 +18,7 @@ Por cada canción crea salida/<nombre>/ con:
     <nombre>.mid       la transcripción en MIDI
     informe.txt        datos del proceso
 """
+import re
 import argparse
 import os
 import shutil
@@ -34,6 +35,14 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
+VERSION = "2.3"
+SIN_INTERNET = False      # --sin-internet o configuracion.txt
+DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
+COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
+CARPETA_PSARC = None
+WWISE = None
+DD_MODO = "propia"        # propia | dlcbuilder | ninguna; configuracion.txt: dificultad
+UMBRAL_CENTS = 30.0       # desvío mínimo (cents) para cambiar el Tuning Pitch; configuracion.txt: umbral_cents
 EXTENSIONES = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma"}
 
 # ---------------- parámetros (los que funcionaron en las pruebas) ----------------
@@ -94,22 +103,116 @@ def ffmpeg(*args):
         raise RuntimeError(f"ffmpeg falló: {r.stderr.strip()[:500]}")
 
 
-def metadatos(ruta):
-    """Artista y título: del nombre 'Artista - Título' si lo tiene; si no, de las etiquetas del archivo."""
-    stem = ruta.stem.replace("_", " ")
-    if " - " in stem:
-        a, t = stem.split(" - ", 1)
-        return a.strip(), t.strip()
-    artista, titulo = "", ""
+ETIQUETA_BASURA = re.compile(
+    r"^(unknown( artist)?|artista desconocido|desconocido|various( artists)?|varios( artistas)?|va|"
+    r"track ?\d*|pista ?\d*|untitled|sin t[ií]tulo|audio ?track|new recording.*|\d+)$"
+    r"|www\.|https?://|\.(com|net|org|ru|info)\b", re.I)
+
+
+def leer_etiquetas(ruta):
+    """Etiquetas ID3/Vorbis/MP4 del archivo, ya reparadas (vacío si no hay o no se pueden leer)."""
+    out = {}
     try:
         import mutagen
         tags = mutagen.File(str(ruta), easy=True)
-        if tags:
-            artista = (tags.get("artist") or [""])[0].strip()
-            titulo = (tags.get("title") or [""])[0].strip()
-    except Exception:
-        pass
-    return artista or "Desconocido", titulo or stem
+        if tags and tags.tags:
+            for clave in ("artist", "albumartist", "title", "album", "date", "tracknumber", "genre"):
+                v = " / ".join(x.strip() for x in (tags.get(clave) or []) if x and x.strip())
+                if v:
+                    out[clave] = arreglar_texto(v)
+    except Exception as ex:
+        out["error"] = str(ex)[:200]
+    return out
+
+
+def _etiqueta_valida(texto):
+    return bool(texto) and not ETIQUETA_BASURA.search(texto.strip())
+
+
+def metadatos(ruta):
+    """Artista y título. Prioridad: etiquetas del archivo (si traen artista y título que no sean de
+    relleno), después el nombre 'Artista - Título', y por último lo que haya.
+    Devuelve (artista, titulo, fuente, etiquetas)."""
+    et = leer_etiquetas(ruta)
+    a_et = et.get("artist") or et.get("albumartist") or ""
+    a_et = a_et.split(" / ")[0]  # varios artistas: el primero
+    t_et = et.get("title", "")
+    stem = ruta.stem.replace("_", " ").strip()
+    a_nom, t_nom = "", ""
+    if " - " in stem:
+        a_nom, t_nom = (x.strip() for x in stem.split(" - ", 1))
+        a_nom = re.sub(r"^\d{1,3}[ .-]+", "", a_nom).strip()  # '01 - ...' / '01. Artista - ...'
+    a_et, t_et = re.sub(r"\s+", " ", a_et).strip(), re.sub(r"\s+", " ", t_et).strip()
+    # etiquetas de descargas de YouTube: "LosPlanetasVEVO" / "Los Planetas - Topic" y "Artista - Título (Videoclip)"
+    a_et = re.sub(r"\s*(VEVO|- Topic|Official)$", "", a_et, flags=re.I).strip()
+    t_et = re.sub(r"\s*[\(\[](official )?(music )?(video ?clip|videoclip|video oficial|v[ií]deo|lyric video|"
+                  r"audio( oficial)?|official (audio|video)|letra|lyrics?)[\)\]]", "", t_et, flags=re.I).strip()
+    if " - " in t_et:
+        izq, der = (x.strip() for x in t_et.split(" - ", 1))
+        if _normalizar(izq).replace(" ", "") in (_normalizar(a_et).replace(" ", ""), _normalizar(a_nom).replace(" ", "")) \
+                or not a_et:
+            a_et, t_et = izq, der
+    if _etiqueta_valida(a_et) and _etiqueta_valida(t_et):
+        return a_et, t_et, "etiquetas", et
+    if a_nom and t_nom:
+        return a_nom, t_nom, "nombre del archivo", et
+    artista = a_et if _etiqueta_valida(a_et) else "Desconocido"
+    titulo = t_et if _etiqueta_valida(t_et) else stem
+    return artista, titulo, "mixta", et
+
+
+def nombre_carpeta(artista, titulo):
+    """'Artista - Título' válido como nombre de carpeta/archivo en Windows."""
+    n = f"{artista} - {titulo}"
+    n = re.sub(r'[?*"<>\x00-\x1f]', "", n)
+    n = re.sub(r"[:/\\|]", "-", n)
+    n = re.sub(r"\s+", " ", n).strip().rstrip(". ")
+    return n[:120].rstrip(". ") or "Sin nombre"
+
+
+def destino(ruta, salida):
+    """Carpeta de salida de un mp3. Si ya se procesó con el nombre antiguo (el del archivo), se reutiliza
+    esa para no repetir el trabajo; si otra canción distinta ocupa el nombre, se añade ' (2)', ' (3)'..."""
+    import json
+    artista, titulo, fuente, et = metadatos(ruta)
+    antiguo = salida / ruta.stem
+    if (antiguo / f"{ruta.stem}.gp5").exists():
+        return ruta.stem, antiguo, artista, titulo, fuente, et
+    base = nombre_carpeta(artista, titulo)
+    # nombre con la regla de la 2.1.1 ('?' y ':' cambiados por '-'): si ya existe, se reutiliza
+    viejo = re.sub(r"\s+", " ", re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", f"{artista} - {titulo}")).strip().rstrip(". ")[:120].rstrip(". ")
+    if viejo != base and (salida / viejo / f"{viejo}.gp5").exists():
+        return viejo, salida / viejo, artista, titulo, fuente, et
+    for k in range(1, 50):
+        nombre = base if k == 1 else f"{base} ({k})"
+        d = salida / nombre
+        diag = d / "diagnostico.json"
+        try:
+            ocupada = diag.exists() and json.loads(diag.read_text(encoding="utf-8")).get("archivo") != ruta.name
+        except Exception:
+            ocupada = False
+        if not ocupada:
+            return nombre, d, artista, titulo, fuente, et
+    return base, salida / base, artista, titulo, fuente, et
+
+
+def arreglar_texto(texto):
+    """Repara textos con la codificación rota (p. ej. 'EdiciÃ³n' -> 'Edición'), típico de etiquetas ID3."""
+    if texto and any(m in texto for m in ("Ã", "Â", "â€")):
+        try:
+            return texto.encode("cp1252", errors="strict").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            try:
+                return texto.encode("latin-1").decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+    return texto
+
+
+def a_ascii(texto):
+    """'Luces de neón' -> 'Luces de neon' (para nombres de archivo y orden en el juego)."""
+    import unicodedata
+    return unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
 
 
 def mmss(segundos):
@@ -119,17 +222,17 @@ def mmss(segundos):
 
 def album_y_anio(ruta):
     """Álbum y año de las etiquetas del archivo (si no hay: álbum vacío y año actual)."""
-    album, year = "", time.localtime().tm_year
+    album, year, de_etiqueta = "", time.localtime().tm_year, False
     try:
         import mutagen, re
         tags = mutagen.File(str(ruta), easy=True)
         if tags:
-            album = (tags.get("album") or [""])[0].strip()
+            album = arreglar_texto((tags.get("album") or [""])[0].strip())
             m = re.search(r"(19|20)\d\d", (tags.get("date") or [""])[0])
-            if m: year = int(m.group(0))
+            if m: year, de_etiqueta = int(m.group(0)), True
     except Exception:
         pass
-    return {"album": album, "year": year}
+    return {"album": album, "year": year, "year_de_etiqueta": de_etiqueta}
 
 
 # ---------------- 1. separación del bajo ----------------
@@ -196,6 +299,13 @@ def construir_grid(beats, act, duracion):
     fr = np.clip(np.round(beats * 100).astype(int), 0, len(act) - 1)
     a = np.array([act[max(0, f - 2):f + 3, 1].max() for f in fr])
     pos = compases_viterbi(a)
+    # En el final (ritardando, fundido, nota larga) los beats son poco fiables y salen compases "irregulares"
+    # falsos: los últimos 3 compases se fuerzan a 4/4, empezando en el último tiempo 1 anterior.
+    corte = len(pos) - 12
+    if corte > 4:
+        inicio = max(i for i in range(corte + 1) if pos[i] == 0)
+        pos = pos.copy()
+        pos[inicio:] = np.arange(len(pos) - inicio) % 4
     # hacia atrás: completar el compás del primer beat y añadir compases de 4 hasta cubrir el segundo 0
     n_pre = int(pos[0])
     while beats[0] - n_pre * med > 0:
@@ -220,6 +330,23 @@ def construir_grid(beats, act, duracion):
         if len(seg) != 4:
             irregulares.append((i, len(seg)))
     conf = aciertos / total if total else 0.0
+    ibi = np.diff(beats)
+    tempos_compas = [60 / np.mean(np.diff(grid[barras[i]:barras[i + 1] + 1]))
+                     for i in range(len(barras) - 1) if barras[i + 1] - barras[i] >= 2]
+    a_uno = [ag[b] for b in barras[:-1] if not np.isnan(ag[b])]
+    a_otros = ag[~np.isnan(ag)][posg[~np.isnan(ag)] != 0] if (~np.isnan(ag)).any() else np.array([0.0])
+    DIAG["beats"] = {
+        "beats_madmom": len(beats), "tempo_mediano": round(60 / med, 1),
+        "tempo_compas_min": round(float(min(tempos_compas)), 1) if tempos_compas else None,
+        "tempo_compas_max": round(float(max(tempos_compas)), 1) if tempos_compas else None,
+        "variacion_entre_beats_ms": round(float(np.std(ibi) * 1000), 1),
+        "beats_saltados_o_dobles": int(np.sum((ibi > 1.5 * med) | (ibi < 0.6 * med))),
+        "confianza_tiempo_1": round(conf, 3),
+        "activacion_media_en_el_1": round(float(np.mean(a_uno)), 3) if a_uno else None,
+        "activacion_media_resto": round(float(np.mean(a_otros)), 3),
+        "compases_irregulares": [{"compas_grid": i, "tiempos": n} for i, n in irregulares],
+        "beats_añadidos_al_principio": int(n_pre),
+    }
     return grid, barras, 60 / med, conf, irregulares
 
 
@@ -256,16 +383,17 @@ def transcribir(bajo_wav):
 
     limites = list(ataques) + [len(y) / SR]
     notas, n_cqt, pitches_pyin = [], 0, []
+    descartes = {"segmento_vacio": 0, "silencio": 0, "demasiado_corta": 0, "fuera_de_rango": 0}
     for i in range(len(ataques)):
         t0, t1 = limites[i], limites[i + 1]
         idx = np.where((tiempos >= t0) & (tiempos < t1))[0]
-        if len(idx) < 2: continue
+        if len(idx) < 2: descartes["segmento_vacio"] += 1; continue
         seg = rms_db[idx]
-        if seg.max() - pico < ENERGIA_MIN_DB: continue
+        if seg.max() - pico < ENERGIA_MIN_DB: descartes["silencio"] += 1; continue
         bajo = np.where(seg < seg.max() - 30)[0]
         if len(bajo) and bajo[0] > 1:
             idx = idx[:bajo[0]]; t1 = tiempos[idx[-1]]
-        if t1 - t0 < DUR_MIN: continue
+        if t1 - t0 < DUR_MIN: descartes["demasiado_corta"] += 1; continue
         ok = (~np.isnan(f0[idx])) & (vp[idx] > PYIN_MIN_PROB)
         if ok.sum() >= 2:
             p = int(round(librosa.hz_to_midi(np.median(f0[idx][ok])) - cents / 100))
@@ -274,6 +402,18 @@ def transcribir(bajo_wav):
             p = nota_cqt(idx[:max(4, len(idx) // 2)]); n_cqt += 1
         if 20 <= p <= 43 + TRASTE_MAX:
             notas.append((float(t0), float(t1), p))
+        else:
+            descartes["fuera_de_rango"] += 1
+    dur = np.array([t1 - t0 for t0, t1, _ in notas]) if notas else np.zeros(1)
+    DIAG["transcripcion"] = {
+        "ataques": len(ataques), "notas": len(notas), "por_pyin": len(pitches_pyin), "por_cqt": n_cqt,
+        "descartes": descartes,
+        "tramas_con_tono_fiable_pct": round(100 * float(fiable.mean()), 1),
+        "cents": round(cents, 1), "cents_concentracion": round(float(abs(z)), 3) if fiable.sum() > 50 else None,
+        "duracion_notas_s": {"p10": round(float(np.percentile(dur, 10)), 3), "p50": round(float(np.median(dur)), 3),
+                             "p90": round(float(np.percentile(dur, 90)), 3)},
+        "rango_dinamico_db": round(float(pico - np.percentile(rms_db, 10)), 1),
+    }
     return y, notas, len(ataques), n_cqt, cents, indice_pua(y), pitches_pyin
 
 
@@ -295,6 +435,10 @@ def indice_pua(y):
         fin = ini[i + 1] if i + 1 < len(ini) else len(hf)
         if fin - o < s1: continue
         vals.append(10 * np.log10((hf[o:o + wa].mean() + 1e-12) / (hf[o + s0:o + s1].mean() + 1e-12)))
+    if vals:
+        DIAG["pua"] = {"n": len(vals), "p25": round(float(np.percentile(vals, 25)), 2),
+                       "p50": round(float(np.median(vals)), 2), "p75": round(float(np.percentile(vals, 75)), 2),
+                       "umbral": PUA_UMBRAL_DB}
     return float(np.median(vals)) if len(vals) >= 20 else float("nan")
 
 
@@ -303,22 +447,55 @@ def cuantizar(notas, grid):
     def pos(t):
         i = int(np.clip(np.searchsorted(grid, t) - 1, 0, len(grid) - 2))
         return i + (t - grid[i]) / (grid[i + 1] - grid[i])
-    # la búsqueda NO puede pasar de una semicorchea: el patrón se repite cada semicorchea y, en tempos rápidos,
-    # un desfase mayor desplazaría toda la tablatura una casilla entera
+    # Desfase entre los ataques detectados y la rejilla. Medir solo el encaje en semicorcheas es ambiguo:
+    # d y d - 1 semicorchea encajan igual de bien, y elegir mal corre TODA la tablatura una casilla
+    # (las notas del tiempo y del "y" acaban en la "e" y la "a"). Para desempatar se suma, con menos peso,
+    # el encaje en corcheas y en negras: el bajo cae casi siempre en ellas.
     semicorchea = float(np.median(np.diff(grid))) / 4
-    desfase = max(np.arange(0, semicorchea, 0.002),
-                  key=lambda d: np.mean(np.cos(2 * np.pi * 4 * np.array([pos(t0 + d) for t0, _, _ in notas]))))
+    inicios = np.array([t0 for t0, _, _ in notas])
+
+    def encaje(d, pesos=(1.0, 0.5, 0.25)):
+        ph = np.array([pos(t) for t in inicios + d])
+        return sum(w * np.mean(np.cos(2 * np.pi * k * ph)) for w, k in zip(pesos, (4, 2, 1)))
+
+    # margen físico: los ataques detectados van de algo tarde (-40 ms) a bastante pronto (+120 ms);
+    # la ventana nunca es más corta que una semicorchea para poder probar todas las fases
+    candidatos = np.arange(-0.040, max(0.120, -0.040 + semicorchea), 0.002)
+    desfase = float(max(candidatos, key=encaje))
+    solo_semicorchea = float(max(np.arange(0, semicorchea, 0.002), key=lambda d: encaje(d, (1.0, 0, 0))))
     q = {}
+    choques, choques_otra_nota = 0, 0
     for t0, t1, p in notas:
         s0 = int(round(pos(t0 + desfase) * 4)); s1 = max(s0 + 1, int(round(pos(t1 + desfase) * 4)))
+        if s0 in q:
+            choques += 1; choques_otra_nota += int(q[s0][2] != p)
         if s0 not in q or (s1 - s0) > (q[s0][1] - q[s0][0]):
             q[s0] = [s0, s1, p]
+    antes_del_grid = sum(1 for v in q.values() if v[0] < 0)
     q = sorted(v for v in q.values() if v[0] >= 0)    # seguridad: nada antes del grid
     for i in range(len(q) - 1):
         q[i][1] = min(q[i][1], q[i + 1][0])
     q = [x for x in q if x[1] > x[0]]
-    ambiguas = np.mean([abs(pos(t0 + desfase) * 4 - round(pos(t0 + desfase) * 4)) > 0.35 for t0, _, _ in notas])
+    err = np.array([pos(t0 + desfase) * 4 - round(pos(t0 + desfase) * 4) for t0, _, _ in notas])
+    ambiguas = float(np.mean(np.abs(err) > 0.35))
+    semis = np.array([round(pos(t0 + desfase) * 4) % 4 for t0, _, _ in notas])
+    DIAG["cuantizacion"] = {
+        "desfase_ms": round(desfase * 1000), "semicorchea_ms": round(semicorchea * 1000),
+        "desfase_version_anterior_ms": round(solo_semicorchea * 1000),
+        "corrida_una_casilla_respecto_a_antes": abs(round((solo_semicorchea - desfase) / semicorchea)) >= 1,
+        "alineacion": round(float(abs(np.mean(np.exp(2j * np.pi * err)))), 3),
+        "error_medio_semicorcheas": round(float(np.mean(np.abs(err))), 3), "ambiguas_pct": round(100 * ambiguas, 1),
+        "choques_misma_casilla": choques, "choques_con_otra_nota": choques_otra_nota, "antes_del_grid": antes_del_grid,
+        "notas_resultantes": len(q),
+        "posicion_en_el_tiempo_pct": {k: round(100 * float(np.mean(semis == i)), 1)
+                                      for i, k in enumerate(["en_el_tiempo", "e", "y", "a"])},
+    }
     return q, desfase, ambiguas
+
+
+def _nombre_nota(midi):
+    nombres = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    return f"{nombres[int(midi) % 12]}{int(midi) // 12 - 1}"
 
 
 def ajustar_a_rango(q, cuerdas):
@@ -346,14 +523,22 @@ def elegir_afinacion(q, pitches_pyin):
         candidatas = [a for a in AFINACIONES if a[0] == "E estándar"]
     else:
         candidatas = [a for a in AFINACIONES if a[1][0] == L] or [a for a in AFINACIONES if a[1][0] == 23]
-    mejor = None
+    mejor, evaluadas = None, []
     for nombre, cuerdas, prior in candidatas:
         qa, movidas = ajustar_a_rango(q, cuerdas)
         tab, coste = digitar(qa, list(reversed(cuerdas)))
         puntos = coste / max(1, len(qa)) + prior
+        evaluadas.append({"afinacion": nombre, "puntos": round(puntos, 3), "notas_movidas_de_octava": movidas})
         if mejor is None or puntos < mejor[0]:
             mejor = (puntos, nombre, cuerdas, tab, movidas)
     _, nombre, cuerdas, tab, movidas = mejor
+    graves_vistas = {_nombre_nota(p): cuenta[p] for p in sorted(cuenta)[:5]}
+    trastes = [t[4] for t in tab]
+    DIAG["afinacion"] = {"elegida": nombre, "nota_grave_repetida": _nombre_nota(L), "umbral_repeticiones": umbral,
+                         "notas_mas_graves_pyin": graves_vistas, "candidatas": evaluadas,
+                         "traste_max": int(max(trastes)), "traste_medio": round(float(np.mean(trastes)), 1),
+                         "cuerdas_uso": {str(c): int(sum(1 for t in tab if t[3] == c)) for c in (1, 2, 3, 4)},
+                         "cuerdas_al_aire_pct": round(100 * float(np.mean(np.array(trastes) == 0)), 1)}
     return nombre, cuerdas, tab, movidas, L
 
 
@@ -463,12 +648,110 @@ def volumen_rocksmith(ruta):
     return 0.0 if not np.isfinite(lufs) else round(-16.0 - lufs, 1)
 
 
-def crear_portada(ruta_audio, destino, artista, titulo):
-    """Portada 512x512 PNG: la incrustada en el audio (recortada a cuadrado) o una generada."""
+def _normalizar(texto):
+    import re, unicodedata
+    t = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"\(.*?\)|\[.*?\]", " ", t)
+    t = re.sub(r"\b(feat|ft|remaster(ed)?|version|videoclip|video|live|en directo)\b.*", " ", t)
+    return re.sub(r"[^a-z0-9]+", " ", t).strip()
+
+
+def _parecido(a, b):
+    import difflib
+    a, b = _normalizar(a), _normalizar(b)
+    if not a or not b:
+        return 0.0
+    return 1.0 if (a in b or b in a) else difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _http_json(url):
+    import json, urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": f"cdlc-bajo/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _http_bytes(url):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": f"cdlc-bajo/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
+
+
+def _es_recopilatorio(album):
+    """Recopilatorios, directos y similares (se prefieren los discos originales)."""
+    import re
+    return bool(re.search(r"grandes|greatest|best of|lo mejor|esencial|essential|imprescindible|colecci|collection|recopila|"
+                          r"antolog|anthology|hits|exitos|en directo|en vivo|live|directo|sus canciones|"
+                          r"edicion especial|deluxe|remaster|karaoke|tribut", _normalizar(album))
+                or re.fullmatch(r"(cd|disc|disco|vol|volumen|volume) ?\d*", _normalizar(album)))
+
+
+def buscar_caratula(artista, titulo):
+    """Busca la canción en iTunes y, si no, en Deezer. Exige que coincidan artista y título.
+    Devuelve {fuente, url, album, year} o None (sin conexión o sin coincidencia)."""
+    import re, urllib.parse
+    q = urllib.parse.quote(f"{artista} {titulo}")
+    diag = DIAG.setdefault("caratula", {"busqueda": f"{artista} {titulo}"})
+    try:
+        candidatos = []
+        for r in _http_json(f"https://itunes.apple.com/search?term={q}&entity=song&limit=25&country=ES").get("results", []):
+            if _parecido(r.get("artistName"), artista) >= 0.8 and _parecido(r.get("trackName"), titulo) >= 0.7 \
+                    and r.get("artworkUrl100"):
+                candidatos.append(r)
+        diag["itunes_coincidencias"] = [
+            {"album": r.get("collectionName"), "fecha": (r.get("releaseDate") or "")[:10], "discos": r.get("discCount"),
+             "pistas": r.get("trackCount"), "recopilatorio": _es_recopilatorio(r.get("collectionName", ""))}
+            for r in candidatos]
+        if candidatos:
+            # el disco original: primero los que no son recopilatorios/directos, y de ellos el más antiguo
+            # desempate: un solo disco y menos pistas = disco original (las cajas y recopilatorios son más largos)
+            r = min(candidatos, key=lambda r: (_es_recopilatorio(r.get("collectionName", ""))
+                                                or "various" in _normalizar(r.get("collectionArtistName", "")),
+                                                bool(re.search(r"\b(ep|single)\b", _normalizar(r.get("collectionName", "")))),
+                                                r.get("releaseDate") or "9999",
+                                                (r.get("discCount") or 1) > 1,
+                                                r.get("trackCount") or 99))
+            anio = (r.get("releaseDate") or "")[:4]
+            diag["elegida"] = f"iTunes: {r.get('collectionName')} ({anio})"
+            return {"fuente": "iTunes", "url": r["artworkUrl100"].replace("100x100bb", "600x600bb"),
+                    "album": r.get("collectionName") or "", "year": int(anio) if anio.isdigit() else None}
+    except Exception as ex:
+        diag["itunes_error"] = str(ex)[:200]
+    try:
+        for r in _http_json(f"https://api.deezer.com/search?q={q}&limit=10").get("data", []):
+            if _parecido(r["artist"]["name"], artista) >= 0.8 and _parecido(r["title"], titulo) >= 0.7 \
+                    and r.get("album", {}).get("cover_xl"):
+                anio = None
+                try:
+                    fecha = _http_json(f"https://api.deezer.com/album/{r['album']['id']}").get("release_date", "")
+                    anio = int(fecha[:4]) if fecha[:4].isdigit() else None
+                except Exception:
+                    pass
+                diag["elegida"] = f"Deezer: {r['album'].get('title')} ({anio})"
+                return {"fuente": "Deezer", "url": r["album"]["cover_xl"], "album": r["album"].get("title") or "",
+                        "year": anio}
+    except Exception as ex:
+        diag["deezer_error"] = str(ex)[:200]
+    diag["elegida"] = None
+    return None
+
+
+def crear_portada(ruta_audio, destino, artista, titulo, caratula=None):
+    """Portada 512x512 PNG: la de internet si se encontró, si no la incrustada en el audio
+    (recortada a cuadrado), y si tampoco hay, una generada. Devuelve (ruta, origen)."""
     from PIL import Image, ImageDraw, ImageFont
     import io
-    img = None
+    img, origen = None, "generada"
+    if caratula:
+        try:
+            img = Image.open(io.BytesIO(_http_bytes(caratula["url"]))).convert("RGB")
+            origen = f"de {caratula['fuente']}"
+        except Exception:
+            img = None
     try:
+        if img is not None:
+            raise StopIteration
         import mutagen
         f = mutagen.File(str(ruta_audio))
         datos = None
@@ -482,6 +765,9 @@ def crear_portada(ruta_audio, destino, artista, titulo):
                 datos = bytes(f.tags["covr"][0])
         if datos:
             img = Image.open(io.BytesIO(datos)).convert("RGB")
+            origen = "incrustada en el mp3"
+    except StopIteration:
+        pass
     except Exception:
         img = None
     if img is not None:
@@ -504,7 +790,7 @@ def crear_portada(ruta_audio, destino, artista, titulo):
             d.text(((512 - ancho) / 2, y), texto, fill=(240, 240, 240), font=fuente)
         centrado(titulo, 200, fuente_g); centrado(artista, 270, fuente_p)
     img.save(destino, "PNG")
-    return destino
+    return destino, origen
 
 
 def escribir_preview(ogg, destino, duracion):
@@ -549,18 +835,47 @@ def calcular_anclas(eventos):
     return anclas
 
 
+NIVELES_DD = ["un golpe por compás", "uno por medio compás", "uno por tiempo", "corcheas", "completa"]
+
+
+def niveles_dd(tab, compases, completo):
+    """Dificultad dinámica propia, igual en toda la canción y basada en el pulso:
+    nivel 0 = una nota por compás (la del 1, o la primera si el 1 va vacío), 1 = una por medio compás,
+    2 = una por tiempo, 3 = una por corchea, 4 = todas. Así lo sencillo sigue el ritmo de la canción.
+    Devuelve, para cada nota de tab, el nivel mínimo en el que aparece."""
+    inicios = np.array([b for b, _ in compases])
+    nivel = np.full(len(tab), 4)
+    grupos = {}
+    for k, n in enumerate(tab):
+        bi = n[0] / 4 + 4                       # posición en beats del audio (con COUNT)
+        c = int(np.clip(np.searchsorted(inicios, bi + 1e-6, side="right") - 1, 0, len(compases) - 1))
+        b, nb = compases[c]
+        pos = int(round((bi - b) * 4))          # semicorchea dentro del compás
+        unidades = {0: nb * 4, 1: (nb * 2 if nb % 2 == 0 else nb * 4), 2: 4, 3: 2}
+        for d, u in unidades.items():
+            clave = (d, c, pos // u)
+            # importancia: estar al principio de la unidad; si no, la que caiga en el pulso más fuerte
+            fuerza = 0 if pos % u == 0 else (1 if pos % 4 == 0 else (2 if pos % 2 == 0 else 3))
+            mejor = grupos.get(clave)
+            if mejor is None or (fuerza, n[0]) < mejor[0]:
+                grupos[clave] = ((fuerza, n[0]), k)
+    for (d, _, _), (_, k) in grupos.items():
+        nivel[k] = min(nivel[k], d)
+    return nivel
+
+
 def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, duracion_audio):
     from xml.sax.saxutils import escape
     E = lambda x: escape(str(x), {'"': "&quot;"})
     offsets = [c - base for c, base in zip(cuerdas, [28, 33, 38, 43])]
     estandar = int(all(o == 0 for o in offsets))
+    tab = sorted(tab, key=lambda n: n[0])
     notas = []
     for s0, s1, _, cuerda_gp, traste in tab:
         t0, t1 = tiempo_de_slot(completo, s0), tiempo_de_slot(completo, s1)
         cuerda = 4 - cuerda_gp            # XML: 0 = la más grave
         sustain = (t1 - t0) if (s1 - s0) >= 4 else 0.0
         notas.append((t0, cuerda, traste, sustain))
-    notas.sort()
     anclas = calcular_anclas([(t, f) for t, _, f, _ in notas])
     beats = completo
     t_count, t_musica = beats[0], beats[4]
@@ -597,13 +912,92 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
       'doubleStops="0" palmMutes="0" harmonics="0" pinchHarmonics="0" hopo="0" tremolo="0" slides="0" '
       'unpitchedSlides="0" bends="0" tapping="0" vibrato="0" fretHandMutes="0" slapPop="0" twoFingerPicking="0" '
       f'fifthsAndOctaves="0" syncopation="0" bassPick="{int(pua)}" sustain="1" pathLead="0" pathRhythm="0" pathBass="1" />')
-    w('  <phrases count="3">')
-    for nombre in ("COUNT", "riff", "END"):
-        w(f'    <phrase name="{nombre}" maxDifficulty="0" />')
+    # ---- frases y niveles de dificultad ----
+    if DD_MODO == "dlcbuilder":
+        # una sola frase musical: DLC Builder crea las frases y la DD a su manera
+        frases = [("COUNT", 0), ("riff", 0), ("END", 0)]
+        iteraciones = [(t_count, 0), (t_musica, 1), (t_end, 2)]
+        secciones = [t_musica]
+        niveles = [notas]
+        nivel_frase = None
+    else:
+        # frases de 4 compases (8 si la canción es muy larga; Rocksmith admite 100)
+        compases_musica = [b for b, _ in compases[1:] if beats[b] < t_end - 0.05]
+        paso = 4 if len(compases_musica) / 4 <= 96 else 8
+        bloques = compases_musica[::paso]
+        cortes = [beats[b] for b in bloques]
+        cortes[0] = t_musica
+        lim = cortes + [t_end]
+        nivel_nota = niveles_dd(tab, compases, completo) if DD_MODO == "propia" else np.full(len(notas), 0)
+        frases, iteraciones, firmas = [("COUNT", 0)], [(t_count, 0)], {}
+        conjuntos_por_iter = []
+        for k in range(len(cortes)):
+            idx = [i for i, n in enumerate(notas) if lim[k] - 1e-4 <= n[0] < lim[k + 1] - 1e-4]
+            # versiones distintas de la frase, de más fácil a completa (se quitan las repetidas)
+            versiones = []
+            for d in range(len(NIVELES_DD)) if DD_MODO == "propia" else [0]:
+                v = [i for i in idx if nivel_nota[i] <= d]
+                if v and (not versiones or v != versiones[-1]):
+                    versiones.append(v)
+            if not versiones:
+                versiones = [[]]
+            # frases que se repiten (estribillo, estrofa...) comparten nombre y Rocksmith suma su progreso.
+            # Se comparan con tolerancia: la transcripción nunca sale idéntica en dos repeticiones.
+            slot0 = (bloques[k] - 4) * 4
+            firma = {(int(tab[i][0] - slot0), int(tab[i][2])) for i in idx}
+            pid = None
+            for ref, (fid, _) in firmas.items():
+                otra = set(ref)
+                if (not firma and not otra) or (firma and otra and
+                                                len(firma & otra) / max(len(firma), len(otra)) >= 0.75):
+                    pid = fid
+                    break
+            if pid is None:
+                pid = len(frases)
+                firmas[frozenset(firma)] = (pid, None)
+                frases.append((f"p{len(frases)}", len(versiones) - 1))
+            else:
+                nombre, maxd = frases[pid]
+                frases[pid] = (nombre, max(maxd, len(versiones) - 1))
+            iteraciones.append((lim[k], pid))
+            conjuntos_por_iter.append(versiones)
+        frases.append(("END", 0)); iteraciones.append((t_end, len(frases) - 1))
+        n_niveles = max(len(v) for v in conjuntos_por_iter)
+        niveles = []
+        for d in range(n_niveles):
+            sel = sorted(i for v in conjuntos_por_iter for i in v[min(d, len(v) - 1)])
+            nivel_notas = []
+            for j, i in enumerate(sel):
+                t, cu, f, sus = notas[i]
+                if d < n_niveles - 1 and d <= 1 and j + 1 < len(sel):
+                    # en los niveles de pocas notas, la nota se mantiene hasta la siguiente (máx. medio compás)
+                    hueco = notas[sel[j + 1]][0] - t
+                    medio = 2 * 60.0 / max(tempo_medio_aprox(beats, t), 1)
+                    if hueco > 0.4:
+                        sus = max(sus, min(hueco - 0.1, medio))
+                nivel_notas.append((t, cu, f, sus))
+            niveles.append(nivel_notas)
+        secciones = [lim[k] for k in range(0, len(cortes), 2)]
+        nivel_frase = [len(v) - 1 for v in conjuntos_por_iter]
+    w(f'  <phrases count="{len(frases)}">')
+    for nombre, maxd in frases:
+        w(f'    <phrase name="{nombre}" maxDifficulty="{maxd}" />')
     w("  </phrases>")
-    w('  <phraseIterations count="3">')
-    for t, pid in ((t_count, 0), (t_musica, 1), (t_end, 2)):
-        w(f'    <phraseIteration time="{t:.3f}" phraseId="{pid}"/>')
+    w(f'  <phraseIterations count="{len(iteraciones)}">')
+    for t, pid in iteraciones:
+        maxd = frases[pid][1]
+        if maxd == 0:
+            w(f'    <phraseIteration time="{t:.3f}" phraseId="{pid}"/>')
+            continue
+        # niveles "héroe" (fácil/medio/difícil): el difícil es el máximo de la frase. Sin ellos el juego
+        # cree que el nivel 0 ya es el máximo (100 % de dominio al momento y puntuación mal contada)
+        facil, medio = (maxd, maxd) if maxd == 1 else (int(maxd / 4 + 0.5), int(maxd / 2 + 0.5))
+        w(f'    <phraseIteration time="{t:.3f}" phraseId="{pid}">')
+        w('      <heroLevels count="3">')
+        for heroe, dif in ((1, facil), (2, medio), (3, maxd)):
+            w(f'        <heroLevel hero="{heroe}" difficulty="{dif}"/>')
+        w("      </heroLevels>")
+        w("    </phraseIteration>")
     w("  </phraseIterations>")
     for etiqueta in ("newLinkedDiffs", "linkedDiffs", "phraseProperties", "chordTemplates", "fretHandMuteTemplates"):
         w(f'  <{etiqueta} count="0"/>')
@@ -611,8 +1005,9 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     for i, t in enumerate(beats):
         w(f'    <ebeat time="{t:.3f}" measure="{medida[i]}" />' if i in medida else f'    <ebeat time="{t:.3f}" />')
     w("  </ebeats>")
-    w('  <sections count="1">')
-    w(f'    <section name="riff" number="1" startTime="{t_musica:.3f}"/>')
+    w(f'  <sections count="{len(secciones)}">')
+    for k, t in enumerate(secciones, 1):
+        w(f'    <section name="riff" number="{k}" startTime="{t:.3f}"/>')
     w("  </sections>")
     eventos, previo = [], None
     for b, n in compases:
@@ -626,30 +1021,43 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     for etiqueta in ("notes", "chords", "anchors", "handShapes"):
         w(f'      <{etiqueta} count="0"/>')
     w("  </transcriptionTrack>")
-    w('  <levels count="1">')
-    w('    <level difficulty="0">')
-    w(f'      <notes count="{len(notas)}">')
-    for t, cuerda, traste, sus in notas:
-        extra = f' sustain="{sus:.3f}"' if sus > 0 else ""
-        w(f'        <note time="{t:.3f}" string="{cuerda}" fret="{traste}"{extra} />')
-    w("      </notes>")
-    w('      <chords count="0"/>')
-    w('      <fretHandMutes count="0"/>')
-    w(f'      <anchors count="{len(anclas)}">')
-    for t, f in anclas:
-        w(f'        <anchor time="{t:.3f}" fret="{f}" width="4.000"/>')
-    w("      </anchors>")
-    w('      <handShapes count="0"/>')
-    w("    </level>")
+    w(f'  <levels count="{len(niveles)}">')
+    for d, nivel_notas in enumerate(niveles):
+        anclas_d = calcular_anclas([(t, f) for t, _, f, _ in nivel_notas]) or [(t_musica, 1)]
+        w(f'    <level difficulty="{d}">')
+        w(f'      <notes count="{len(nivel_notas)}">')
+        for t, cuerda, traste, sus in nivel_notas:
+            extra = f' sustain="{sus:.3f}"' if sus > 0 else ""
+            w(f'        <note time="{t:.3f}" string="{cuerda}" fret="{traste}"{extra} />')
+        w("      </notes>")
+        w('      <chords count="0"/>')
+        w('      <fretHandMutes count="0"/>')
+        w(f'      <anchors count="{len(anclas_d)}">')
+        for t, f in anclas_d:
+            w(f'        <anchor time="{t:.3f}" fret="{f}" width="4.000"/>')
+        w("      </anchors>")
+        w('      <handShapes count="0"/>')
+        w("    </level>")
     w("  </levels>")
     w("</song>")
     Path(ruta).write_text("\n".join(L) + "\n", encoding="utf-8")
-    return {"notas": notas, "anclas": anclas, "t_count": t_count, "t_musica": t_musica, "t_end": t_end}
+    DIAG["dificultad"] = {"modo": DD_MODO, "niveles": len(niveles),
+                          "notas_por_nivel": [len(n) for n in niveles],
+                          "frases_distintas": len(frases) - 2, "repeticiones_de_frase": len(iteraciones) - 2,
+                          "secciones": len(secciones),
+                          "niveles_por_frase": " ".join(str(x) for x in nivel_frase) if nivel_frase else None}
+    return {"notas": notas, "anclas": anclas, "t_count": t_count, "t_musica": t_musica, "t_end": t_end,
+            "niveles": [len(n) for n in niveles], "frases": len(iteraciones) - 2}
+
+
+def tempo_medio_aprox(beats, t):
+    i = int(np.clip(np.searchsorted(beats, t), 1, len(beats) - 1))
+    return 60.0 / max(beats[i] - beats[i - 1], 1e-3)
 
 
 def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua):
     import json, uuid, zlib
-    clave = "cb" + (StringValidator_dlckey(meta["artista"])[:5] + StringValidator_dlckey(meta["titulo"])[:5])
+    clave = "cb" + (StringValidator_dlckey(a_ascii(meta["artista"]))[:5] + StringValidator_dlckey(a_ascii(meta["titulo"]))[:5])
     if len(clave) < 5:
         clave += "xxxxx"[:5 - len(clave)]
     semilla = zlib.crc32(clave.encode())
@@ -657,9 +1065,9 @@ def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cu
     proyecto = {
         "Version": "1",
         "DLCKey": clave,
-        "ArtistName": {"Value": meta["artista"], "SortValue": meta["artista"]},
-        "Title": {"Value": meta["titulo"], "SortValue": meta["titulo"]},
-        "AlbumName": {"Value": meta["album"], "SortValue": meta["album"]},
+        "ArtistName": {"Value": meta["artista"], "SortValue": a_ascii(meta["artista"])},
+        "Title": {"Value": meta["titulo"], "SortValue": a_ascii(meta["titulo"])},
+        "AlbumName": {"Value": meta["album"], "SortValue": a_ascii(meta["album"])},
         "Year": int(meta["year"]),
         "AlbumArtFile": Path(portada).name,
         "AudioFile": {"Path": Path(ogg).name, "Volume": volumen_rocksmith(ogg)},
@@ -731,16 +1139,88 @@ def StringValidator_dlckey(texto):
     return re.sub(r"[^0-9a-zA-Z]", "", texto or "")
 
 
+def info_audio(ruta):
+    """Formato del archivo de entrada (para saber si la calidad de origen limita el resultado)."""
+    try:
+        import mutagen
+        f = mutagen.File(str(ruta))
+        i = f.info
+        return {"formato": type(f).__name__, "duracion_s": round(float(i.length), 1),
+                "kbps": round(getattr(i, "bitrate", 0) / 1000) or None,
+                "hz": getattr(i, "sample_rate", None), "canales": getattr(i, "channels", None),
+                "tamaño_kb": round(Path(ruta).stat().st_size / 1024)}
+    except Exception as ex:
+        return {"error": str(ex)[:200]}
+
+
+def sonoridades(mezcla, bajo):
+    """LUFS de la mezcla y del bajo separado: cuanto más bajo el bajo respecto a la mezcla, más difícil."""
+    try:
+        import soundfile as sf, pyloudnorm
+        out = {}
+        for nombre, ruta in (("mezcla_lufs", mezcla), ("bajo_lufs", bajo)):
+            d, sr = sf.read(str(ruta))
+            v = pyloudnorm.Meter(sr).integrated_loudness(d)
+            out[nombre] = round(float(v), 1) if np.isfinite(v) else None
+        if out["mezcla_lufs"] is not None and out["bajo_lufs"] is not None:
+            out["bajo_respecto_mezcla_db"] = round(out["bajo_lufs"] - out["mezcla_lufs"], 1)
+        return out
+    except Exception as ex:
+        return {"error": str(ex)[:200]}
+
+
+def versiones():
+    import importlib.metadata as md, platform
+    v = {"cdlc-bajo": VERSION, "python": platform.python_version(), "sistema": platform.platform()}
+    for paquete in ("numpy", "scipy", "librosa", "madmom", "audio-separator", "onnxruntime", "torch",
+                    "PyGuitarPro", "pyloudnorm", "pillow"):
+        try:
+            v[paquete] = md.version(paquete)
+        except Exception:
+            v[paquete] = None
+    return v
+
+
+def resumen_tablatura(tab, compases, info_xml):
+    """Estadísticas de la tablatura final y mapa de notas por compás (para localizar tramos vacíos)."""
+    from collections import Counter
+    inicios = [b for b, _ in compases]
+    por_compas = np.bincount(np.searchsorted(inicios, np.array([n[0] / 4 + 4 for n in tab]), side="right") - 1,
+                             minlength=len(compases))
+    duraciones = Counter(int(n[1] - n[0]) for n in tab)
+    nombres = Counter(_nombre_nota(n[2]) for n in tab)
+    vacios = [i + 1 for i in range(1, len(compases)) if por_compas[i] == 0]
+    return {
+        "notas": len(tab), "compases": len(compases),
+        "notas_por_compas": " ".join(str(int(x)) for x in por_compas),
+        "compases_vacios": vacios,
+        "duraciones_en_semicorcheas": {str(k): v for k, v in sorted(duraciones.items())},
+        "notas_mas_frecuentes": dict(nombres.most_common(8)),
+        "notas_con_sustain": sum(1 for n in info_xml["notas"] if n[3] > 0),
+        "posiciones_de_mano": len(info_xml["anclas"]),
+        "frase_musica_s": round(info_xml["t_musica"], 2), "frase_END_s": round(info_xml["t_end"], 2),
+    }
+
+
 def procesar(ruta, salida, forzar):
     import librosa, pretty_midi, soundfile as sf
-    nombre = ruta.stem
-    dest = salida / nombre
+    nombre, dest, artista, titulo, fuente, etiquetas = destino(ruta, salida)
     if (dest / f"{nombre}.gp5").exists() and not forzar:
         log(f"  (ya procesada, la salto; usa --forzar para repetir)")
-        return True
+        return "saltada", ""
     dest.mkdir(parents=True, exist_ok=True)
-    artista, titulo = metadatos(ruta)
+    log(f"  {artista} - {titulo}  (de {fuente})")
     t_ini = time.time()
+    DIAG.clear()
+    DIAG.update({"version": VERSION, "archivo": ruta.name, "artista": artista, "titulo": titulo,
+                 "metadatos": {"fuente": fuente, "carpeta": nombre, "etiquetas": etiquetas},
+                 "fecha": time.strftime("%Y-%m-%d %H:%M"), "tiempos_s": {}})
+    reloj = [time.time()]
+
+    def marca(etapa):
+        DIAG["tiempos_s"][etapa] = round(time.time() - reloj[0], 1); reloj[0] = time.time()
+
+    DIAG["entrada"] = info_audio(ruta)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         tmp = Path(tmp)
         mezcla = tmp / "mezcla.wav"
@@ -748,19 +1228,25 @@ def procesar(ruta, salida, forzar):
         mezcla_mono = tmp / "mezcla_mono.wav"
         ffmpeg("-i", str(mezcla), "-ac", "1", str(mezcla_mono))
         duracion = sf.info(str(mezcla)).duration
+        marca("decodificar")
 
-        log("  [1/5] Separando el bajo...")
+        log("  [1/6] Separando el bajo...")
         bajo = separar_bajo(mezcla, tmp)
-        log("  [2/5] Detectando beats y compases...")
+        marca("separar_bajo")
+        DIAG["sonoridad"] = sonoridades(mezcla, bajo)
+        log("  [2/6] Detectando beats y compases...")
         beats, act = detectar_beats(mezcla_mono)
         grid, barras, bpm, conf, irregulares = construir_grid(beats, act, duracion)
-        log("  [3/5] Transcribiendo notas...")
+        marca("beats_y_compases")
+        log("  [3/6] Transcribiendo notas...")
         y, notas, n_ataques, n_cqt, cents, pua, pitches_pyin = transcribir(bajo)
+        marca("transcribir")
         if not notas:
             raise RuntimeError("no se ha detectado ninguna nota de bajo")
-        log("  [4/5] Cuantizando y digitando...")
+        log("  [4/6] Cuantizando y digitando...")
         q, desfase, ambiguas = cuantizar(notas, grid)
         afin_nombre, cuerdas, tab, movidas, nota_grave = elegir_afinacion(q, pitches_pyin)
+        marca("cuantizar_y_digitar")
 
         # compás COUNT delante + silencio inicial
         med = float(np.median(np.diff(grid)))
@@ -780,7 +1266,7 @@ def procesar(ruta, salida, forzar):
         etiquetas[-1] = 1
         irregulares = [(i + 2, n) for i, n in irregulares if i + 1 < n_compases]   # nº de compás en el .gp5
 
-        log("  [5/5] Escribiendo archivos...")
+        log("  [5/6] Escribiendo archivos...")
         escribir_svl(dest / f"{nombre}.svl", completo, etiquetas)
         n_gp = escribir_gp5(dest / f"{nombre}.gp5", tab, compases, tempos, artista, titulo, cuerdas)
         cola = max(3.0, completo[-1] - (duracion + pad) + 1.0)
@@ -790,16 +1276,33 @@ def procesar(ruta, salida, forzar):
 
         # proyecto listo para DLC Builder: XML del arreglo, preview, portada y .rs2dlc
         meta = {"artista": artista, "titulo": titulo, **album_y_anio(ruta)}
+        caratula = None if SIN_INTERNET else buscar_caratula(artista, titulo)
+        if caratula:
+            if caratula["album"] and (not meta["album"] or
+                                      _normalizar(meta["album"]) == _normalizar(caratula["album"])):
+                meta["album"] = caratula["album"]   # mismo disco: se queda la grafía de la tienda (con acentos)
+            if meta.get("year_de_etiqueta") is False and caratula["year"]:
+                meta["year"] = caratula["year"]
         duracion_ogg = sf.info(str(dest / f"{nombre}.ogg")).duration
         xml_path = dest / f"{nombre}_bass_RS2.xml"
-        info_xml = escribir_xml_rs(xml_path, completo, compases, tab, cuerdas, cents,
+        # Tuning Pitch: sólo si el desvío es grande (si no, 440 para no reafinar en cada canción)
+        cents_aplicado = cents if abs(cents) >= UMBRAL_CENTS else 0.0
+        info_xml = escribir_xml_rs(xml_path, completo, compases, tab, cuerdas, cents_aplicado,
                                    pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, meta, duracion_ogg)
         inicio_prev = escribir_preview(dest / f"{nombre}.ogg", dest / f"{nombre}_preview.ogg", duracion_ogg)
-        portada = crear_portada(ruta, dest / "portada.png", artista, titulo)
+        portada, origen_portada = crear_portada(ruta, dest / "portada.png", artista, titulo, caratula)
         escribir_proyecto(dest / f"{nombre}.rs2dlc", meta, xml_path, dest / f"{nombre}.ogg",
-                          dest / f"{nombre}_preview.ogg", inicio_prev, portada, cuerdas, cents,
+                          dest / f"{nombre}_preview.ogg", inicio_prev, portada, cuerdas, cents_aplicado,
                           pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
+        marca("escribir_archivos")
+        psarcs, error_psarc = [], "desactivada (--sin-psarc)"
+        if COMPILAR and not problemas:
+            log("  [6/6] Compilando el .psarc (Wwise + DD)...")
+            psarcs, error_psarc = compilar_psarc(dest / f"{nombre}.rs2dlc", CARPETA_PSARC, WWISE)
+            marca("compilar_psarc")
+        elif problemas:
+            error_psarc = "no se compila: el proyecto tiene problemas"
 
         # MIDI en tiempo real (notas cuantizadas) + A/B
         def t_slot(s):
@@ -839,9 +1342,12 @@ def procesar(ruta, salida, forzar):
     # --- desvío en cents ---
     la = 440 * 2 ** (cents / 1200)
     txt_cents = f"REFERENCIA DE AFINACIÓN DE LA GRABACIÓN: {cents:+.0f} cents (La = {la:.1f} Hz)\n"
-    if abs(cents) >= 5:
-        txt_cents += (f"  -> Ya va en el proyecto: Tuning Pitch {la:.2f}. El afinador de Rocksmith te dejará\n"
-                      "     empastado con el disco. (Si montas por EOF, ponlo a mano en DLC Builder.)\n")
+    if cents_aplicado:
+        txt_cents += (f"  -> Desvío grande (>= {UMBRAL_CENTS:.0f} cents): va en el proyecto como Tuning Pitch {la:.2f}.\n"
+                      "     El afinador de Rocksmith te pedirá afinar así para empastar con el disco.\n")
+    elif abs(cents) >= 5:
+        txt_cents += (f"  -> Por debajo del umbral ({UMBRAL_CENTS:.0f} cents): se deja en 440 para no reafinar.\n"
+                      "     (Sí se ha tenido en cuenta al reconocer las notas.)\n")
     else:
         txt_cents += "  -> Prácticamente a 440 Hz: no hace falta tocar nada.\n"
     # --- púa ---
@@ -860,7 +1366,12 @@ def procesar(ruta, salida, forzar):
     txt_proyecto = ("PROYECTO DE DLC BUILDER: " + (f"{nombre}.rs2dlc listo (pasa las comprobaciones)\n"
                     if not problemas else "con problemas: " + "; ".join(problemas) + "\n")
                     + "  -> Ábrelo en DLC Builder (Project > Open Project, o arrástralo a la ventana) y pulsa Build.\n")
-    informe = (f"Canción: {artista} - {titulo}\nArchivo: {ruta.name}\n\n" + txt_proyecto + "\n"
+    txt_psarc = ("PSARC: " + (", ".join(Path(x).name for x in psarcs) + f"  (en {CARPETA_PSARC})" if psarcs
+                  else f"no generado ({error_psarc})") + "\n"
+                 + ("" if psarcs else "  -> Puedes compilarlo a mano abriendo el .rs2dlc en DLC Builder.\n"))
+    txt_portada = (f"PORTADA: {origen_portada}" + (f" | álbum: {meta['album']}" if meta['album'] else "")
+                   + f" | año: {meta['year']}\n")
+    informe = (f"Canción: {artista} - {titulo}  (nombre tomado de {fuente})\nArchivo: {ruta.name}\n\n" + txt_psarc + txt_proyecto + txt_portada + "\n"
                + txt_afin + txt_cents + txt_pua + "\n"
                f"Tempo mediano: {bpm:.1f} BPM | confianza del tiempo 1: {conf*100:.0f}%\n"
                f"Ataques detectados: {n_ataques} | notas: {len(notas)} (resueltas por CQT: {n_cqt}) | "
@@ -875,14 +1386,134 @@ def procesar(ruta, salida, forzar):
                   if irregulares else "Compases irregulares: ninguno (todo 4/4)\n")
                + f"Tiempo de proceso: {time.time()-t_ini:.0f} s\n")
     (dest / "informe.txt").write_text(informe, encoding="utf-8")
+    # diagnóstico completo (para depurar): diagnostico.json en la carpeta y en el registro general
+    DIAG["tablatura"] = resumen_tablatura(tab, compases, info_xml)
+    DIAG["resultado"] = {"afinacion": afin_nombre, "cents_aplicados": round(cents_aplicado, 1),
+                         "pua": bool(not np.isnan(pua) and pua >= PUA_UMBRAL_DB), "indice_pua": round(float(pua), 2),
+                         "tempo": round(bpm, 1), "silencio_inicial_s": round(pad, 3), "portada": origen_portada,
+                         "album": meta["album"], "año": meta["year"], "problemas_proyecto": problemas,
+                         "psarc": [Path(x).name for x in psarcs], "error_psarc": None if psarcs else error_psarc,
+                         "compases_irregulares": [f"{c}:{n}/4" for c, n in irregulares]}
+    DIAG["tiempos_s"]["total"] = round(time.time() - t_ini, 1)
+    import json
+    (dest / "diagnostico.json").write_text(json.dumps(DIAG, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     aviso = "  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics" if conf < 0.6 else ""
-    extra = f" | {afin_nombre}" + (f" | {cents:+.0f} cents" if abs(cents) >= 5 else "") + \
+    extra = f" | {afin_nombre}" + (f" | Tuning Pitch {cents_aplicado:+.0f} cents" if cents_aplicado else "") + \
             (" | púa" if veredicto.startswith("PROB") else "") + \
             (f" | {len(irregulares)} compases irregulares" if irregulares else "")
     if problemas:
         aviso += "  ¡OJO! el proyecto tiene problemas, mira el informe"
-    log(f"  OK: {n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%{extra}{aviso}")
-    return True
+    extra += " | psarc OK" if psarcs else (f" | sin psarc: {error_psarc}" if COMPILAR else "")
+    resumen = f"{n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%{extra}{aviso}"
+    log(f"  OK: {resumen}")
+    return "ok", resumen
+
+
+# ---------------- 7. compilación a .psarc (cdlc-pack, librerías de DLC Builder) ----------------
+def leer_configuracion():
+    """configuracion.txt junto al script: líneas 'clave = valor' (# para comentarios)."""
+    conf = {}
+    ruta = AQUI / "configuracion.txt"
+    if ruta.exists():
+        for linea in ruta.read_text(encoding="utf-8").splitlines():
+            linea = linea.split("#", 1)[0].strip()
+            if "=" in linea:
+                k, v = linea.split("=", 1)
+                if v.strip().strip('"'):
+                    conf[k.strip().lower()] = v.strip().strip('"')
+    return conf
+
+
+def ruta_cdlc_pack():
+    if os.environ.get("CDLC_PACK"):
+        return Path(os.environ["CDLC_PACK"])
+    return AQUI / "herramientas" / "cdlc-pack" / ("cdlc-pack.exe" if os.name == "nt" else "cdlc-pack")
+
+
+def compilar_psarc(proyecto, carpeta, wwise=None):
+    """Convierte el audio con Wwise, genera la DD y empaqueta. Devuelve (rutas_psarc, error)."""
+    exe = ruta_cdlc_pack()
+    if not exe.exists():
+        return [], f"no encuentro {exe}"
+    args = [str(exe), str(proyecto), "--salida", str(carpeta)]
+    if wwise:
+        args += ["--wwise", wwise]
+    if DD_MODO == "ninguna":
+        args += ["--sin-dd"]
+    t0 = time.time()
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    rutas = [l.split("PSARC:", 1)[1].strip() for l in r.stdout.splitlines() if l.startswith("PSARC:")]
+    DIAG["psarc"] = {"codigo_salida": r.returncode, "segundos": round(time.time() - t0, 1),
+                     "salida": r.stdout.strip().splitlines()[-15:], "errores": r.stderr.strip().splitlines()[-15:],
+                     "tamaño_kb": [round(Path(x).stat().st_size / 1024) for x in rutas if Path(x).exists()]}
+    verif = [l[6:].strip() for l in r.stdout.splitlines() if l.startswith("VERIF ")]
+    if verif:  # lo que de verdad hay dentro del psarc (niveles DD, frases, notas al máximo nivel)
+        DIAG["psarc"]["verificacion"] = verif
+        for l in verif:
+            if "notas_max=" in l and "niveles=" in l:
+                niveles = int(l.split("niveles=")[1].split()[0])
+                if niveles < 2:
+                    log("  AVISO: el psarc solo tiene un nivel de dificultad (sin DD no habrá porcentaje)")
+                if "notas_puntuables=" in l:
+                    puntuables = float(l.split("notas_puntuables=")[1].split()[0])
+                    maximas = int(l.split("notas_max=")[1].split()[0])
+                    if abs(puntuables - maximas) > 0.5:
+                        log(f"  AVISO: el juego puntuará sobre {puntuables:.0f} notas y la canción tiene {maximas}")
+    if r.returncode != 0 or not rutas:
+        detalle = (r.stderr or r.stdout).strip().splitlines()
+        return [], (detalle[-1] if detalle else f"código {r.returncode}")
+    return rutas, None
+
+
+class Registro:
+    """Registro general de una tanda: resumen por canción + informes completos + errores detallados.
+    Se reescribe tras cada canción, así que vale aunque el proceso se corte a medias."""
+    def __init__(self, ruta, total, forzar):
+        import platform
+        self.ruta, self.total, self.inicio = Path(ruta), total, time.time()
+        self.cabecera = (f"REGISTRO cdlc-bajo {VERSION} | {time.strftime('%Y-%m-%d %H:%M')}\n"
+                         f"Sistema: {platform.platform()} | Python {platform.python_version()}\n"
+                         f"Canciones en la tanda: {total}" + (" | --forzar" if forzar else "") + "\n")
+        self.lineas, self.informes, self.errores, self.final = [], [], [], "(tanda en curso)\n"
+        self.diagnosticos = []
+        try:
+            import json
+            self.cabecera += "Versiones: " + json.dumps(versiones(), ensure_ascii=False) + "\n"
+            self.cabecera += (f"Configuración: psarc={'si' if COMPILAR else 'no'} | carpeta={CARPETA_PSARC} | "
+                              f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} | "
+                              f"wwise={WWISE or 'automático'}\n")
+        except Exception:
+            pass
+        self._guardar()
+
+    def cancion(self, i, ruta, estado, resumen, segundos, informe, traza=None):
+        etiqueta = {"ok": "OK", "saltada": "SALTADA (ya procesada)", "error": "ERROR"}[estado]
+        resumen = (resumen or "").strip().splitlines()[0][:200] if resumen else ""
+        self.lineas.append(f"[{i}/{self.total}] {ruta.name} | {etiqueta} | {segundos:.0f} s"
+                           + (f" | {resumen}" if resumen else ""))
+        if informe is not None and estado == "ok" and Path(informe).exists():
+            self.informes.append(Path(informe).read_text(encoding="utf-8"))
+            diag = Path(informe).with_name("diagnostico.json")
+            if diag.exists():
+                import json
+                self.diagnosticos.append(json.dumps(json.loads(diag.read_text(encoding="utf-8")),
+                                                    ensure_ascii=False, separators=(",", ":")))
+        if traza:
+            self.errores.append(f"--- {ruta.name} ---\n{traza}")
+        self._guardar()
+
+    def cerrar(self, ok, errores):
+        self.final = f"Terminado: {ok} bien, {errores} con error, en {(time.time() - self.inicio) / 60:.1f} min\n"
+        self._guardar()
+
+    def _guardar(self):
+        sep = "\n" + "=" * 78 + "\n"
+        texto = (self.cabecera + "\n" + "\n".join(self.lineas) + "\n\n" + self.final
+                 + (sep + "ERRORES DETALLADOS" + sep + "\n".join(self.errores) if self.errores else "")
+                 + (sep + "INFORMES" + sep + ("\n" + "-" * 78 + "\n").join(self.informes) if self.informes else "")
+                 + (sep + "DIAGNÓSTICO (una línea JSON por canción, para depurar)" + sep
+                    + "\n".join(self.diagnosticos) + "\n" if self.diagnosticos else ""))
+        self.ruta.write_text(texto, encoding="utf-8")
 
 
 def main():
@@ -890,7 +1521,29 @@ def main():
     ap.add_argument("entradas", nargs="*", help="archivos o carpetas (por defecto: carpeta 'entrada')")
     ap.add_argument("--salida", default=str(AQUI / "salida"))
     ap.add_argument("--forzar", action="store_true")
+    ap.add_argument("--psarc", help="carpeta de destino de los .psarc (por defecto: carpeta 'psarc')")
+    ap.add_argument("--wwise", help="ruta a WwiseConsole.exe (normalmente se encuentra sola)")
+    ap.add_argument("--sin-psarc", action="store_true", help="no compilar: deja sólo el proyecto .rs2dlc")
+    ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     a = ap.parse_args()
+    global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO
+    conf = leer_configuracion()
+    try:
+        UMBRAL_CENTS = float(conf.get("umbral_cents", UMBRAL_CENTS))
+        dd = conf.get("dificultad", DD_MODO).strip().lower()
+        DD_MODO = {"propia": "propia", "dlcbuilder": "dlcbuilder", "dlc builder": "dlcbuilder",
+                   "ninguna": "ninguna", "no": "ninguna"}.get(dd, "propia")
+    except ValueError:
+        log("Aviso: umbral_cents no es un número en configuracion.txt; uso 30")
+    CARPETA_PSARC = Path(a.psarc or conf.get("carpeta_psarc") or (AQUI / "psarc"))
+    WWISE = a.wwise or conf.get("wwise") or None
+    COMPILAR = not (a.sin_psarc or conf.get("compilar_psarc", "si").lower() in ("no", "false", "0"))
+    SIN_INTERNET = a.sin_internet or conf.get("buscar_caratulas", "si").lower() in ("no", "false", "0")
+    if COMPILAR and not ruta_cdlc_pack().exists():
+        log(f"Aviso: no encuentro {ruta_cdlc_pack()}; sólo se generarán los proyectos .rs2dlc")
+        COMPILAR = False
+    if COMPILAR:
+        CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
     entradas = [Path(e) for e in a.entradas] or [AQUI / "entrada"]
     archivos = []
     for e in entradas:
@@ -905,16 +1558,36 @@ def main():
         return
     salida = Path(a.salida); salida.mkdir(parents=True, exist_ok=True)
     ffmpeg_bin()
+    registro = Registro(salida / time.strftime("registro_%Y-%m-%d_%H-%M.txt"), len(archivos), a.forzar)
     ok, fallos = 0, []
     for i, r in enumerate(archivos, 1):
         log(f"\n[{i}/{len(archivos)}] {r.name}")
+        t0 = time.time()
         try:
-            procesar(r, salida, a.forzar); ok += 1
+            estado, resumen = procesar(r, salida, a.forzar)
+            ok += estado == "ok"
+            registro.cancion(i, r, estado, resumen, time.time() - t0, destino(r, salida)[1] / "informe.txt")
         except Exception as ex:
-            fallos.append((r.name, str(ex))); log(f"  ERROR: {ex}")
+            import traceback
+            primera = str(ex).strip().splitlines()[0] if str(ex).strip() else type(ex).__name__
+            fallos.append((r.name, primera)); log(f"  ERROR: {primera}")
+            try:
+                carpeta = destino(r, salida)[1]
+            except Exception:
+                carpeta = salida / r.stem
+            if carpeta.is_dir() and not any(carpeta.iterdir()):
+                carpeta.rmdir()
+            import json
+            traza = traceback.format_exc() + "\nDiagnóstico hasta el fallo: " + json.dumps(
+                DIAG, ensure_ascii=False, separators=(",", ":"), default=str)
+            registro.cancion(i, r, "error", str(ex), time.time() - t0, None, traza)
+    registro.cerrar(ok, len(fallos))
     log(f"\nTerminado: {ok} bien, {len(fallos)} con error. Resultados en: {salida}")
     for n, e in fallos:
         log(f"  - {n}: {e}")
+    log(f"Registro de esta tanda (el que me puedes pasar): {registro.ruta.name}")
+    if COMPILAR:
+        log(f"Los .psarc están en: {CARPETA_PSARC}")
 
 
 if __name__ == "__main__":

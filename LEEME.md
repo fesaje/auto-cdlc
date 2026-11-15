@@ -1,18 +1,24 @@
-# cdlc-bajo: de mp3 a CDLC de bajo para Rocksmith 2014
+# cdlc-bajo 2.0: de mp3 a CDLC de bajo para Rocksmith 2014
 
-Convierte canciones (mp3, flac, wav, ogg, m4a…) en el material para montar un CDLC de **bajo** con
-Editor on Fire (EOF) y DLC Builder. Todo funciona en local, gratis y sin pagar tokens de IA.
+Mete canciones (mp3, flac, wav, ogg, m4a…) y saca **archivos `.psarc` listos para jugar** con el
+arreglo de **bajo**. Todo funciona en local y gratis, sin pagar tokens de IA.
 
-Requisitos: Windows 10/11 de 64 bits, conexión a internet la primera vez y ~3 GB libres.
-No hace falta instalar Python ni ffmpeg: el instalador se encarga.
+Requisitos:
+- Windows 10/11 de 64 bits y ~3 GB libres.
+- Conexión a internet la primera vez (y para buscar carátulas).
+- **Wwise** 2019, 2021, 2022 o 2023 instalado, que es lo que convierte el audio al formato de Rocksmith.
+  Es el mismo que usa DLC Builder. Se descarga de https://ignition4.customsforge.com/tools/wwise
+
+No hace falta instalar Python, ffmpeg ni .NET: el instalador y el paquete se encargan.
 
 ---
 
 ## 1. Instalación (una sola vez)
 
 1. Descomprime esta carpeta donde quieras, por ejemplo en `Documentos\cdlc-bajo`.
-2. Haz doble clic en **`instalar.bat`**. Instala `uv`, que es el gestor de Python, y descarga las
-   librerías. Tarda unos minutos.
+2. Haz doble clic en **`instalar.bat`**. Tarda unos minutos.
+3. Opcional: abre **`configuracion.txt`** y pon en `carpeta_psarc` la carpeta `dlc` de Rocksmith.
+   Así las canciones aparecen directamente en el juego.
 
 La primera canción que proceses descargará además el modelo de separación del bajo (30 MB).
 
@@ -21,47 +27,68 @@ La primera canción que proceses descargará además el modelo de separación de
 - **Por lotes:** mete los mp3 en la carpeta **`entrada`** y haz doble clic en **`procesar.bat`**.
 - **Sueltas:** arrastra una o varias canciones, o una carpeta, encima de `procesar.bat`.
 
-**Nombra los archivos `Artista - Título.mp3`**: de ahí salen el artista y el título.
-Las canciones ya procesadas se saltan. Para repetir una, borra su carpeta en `salida`.
+**Artista y título**: se toman de las etiquetas del mp3 (ID3) si traen ambos y no son de relleno
+("Unknown Artist", "Track 03", webs...). Si no, del nombre del archivo `Artista - Título.mp3`. Con
+ellos se nombran la carpeta de `salida` y el psarc, se rellena la información del juego y se busca la
+carátula. El `informe.txt` dice de dónde salió el nombre.
 
-Tarda de 2 a 4 minutos por canción, según el ordenador.
+Las canciones ya procesadas se saltan (también las de versiones anteriores, con su carpeta antigua).
+Para repetir una, borra su carpeta en `salida`.
 
-## 3. Qué obtienes
+Tarda de 3 a 5 minutos por canción, según el ordenador.
 
-En `salida\<nombre de la canción>\`:
+**Resultado:**
+- Los **`.psarc`** van a la carpeta **`psarc`**, o a la que pongas en `configuracion.txt`. Si esa
+  carpeta no es la `dlc` de Rocksmith, cópialos allí.
+- En `salida\<canción>\` queda todo lo demás, incluido el **`informe.txt`** de cada canción.
+- En `salida` queda además un **registro general** de cada tanda (`registro_AAAA-MM-DD_HH-MM.txt`):
+  una línea por canción (bien, saltada o con error), los informes de todas y el detalle técnico de
+  cualquier error. Es el archivo que hay que pasar si algo falla. Se va guardando según avanza.
+
+## 3. `configuracion.txt`
+
+| Clave | Para qué |
+|---|---|
+| `carpeta_psarc` | Dónde dejar los `.psarc`. Vacío: carpeta `psarc` junto al programa. |
+| `compilar_psarc` | `si` (por defecto) o `no` para quedarte solo con el proyecto `.rs2dlc`. |
+| `buscar_caratulas` | `si` (por defecto) o `no` para no conectarse a internet. |
+| `wwise` | Ruta a `WwiseConsole.exe`, solo si no la encuentra solo. |
+| `umbral_cents` | Desvío mínimo de la grabación (en cents) para cambiar el *Tuning Pitch*. Por defecto 30: por debajo se queda en 440 y no reafinas en cada canción. |
+
+Las mismas opciones existen en la línea de comandos: `--psarc CARPETA`, `--sin-psarc`, `--sin-internet`,
+`--wwise RUTA` y `--forzar`, que vuelve a procesar las canciones ya hechas.
+
+## 4. Qué hay en `salida\<canción>\`
 
 | Archivo | Para qué |
 |---|---|
-| `<nombre>.rs2dlc` | **Proyecto de DLC Builder listo para compilar.** Es lo único que tienes que abrir. |
-| `<nombre>_bass_RS2.xml` | El arreglo de bajo en formato Rocksmith (lo usa el proyecto). |
-| `<nombre>_preview.ogg`, `portada.png` | Vista previa de 28 s y portada (la del mp3 o una generada). |
-| `<nombre>.ogg` | El audio con silencio al principio, para el compás de cuenta (COUNT). |
-| `<nombre>.svl`, `<nombre>.gp5` | Mapa de beats y tablatura, solo si quieres retocar la canción en EOF (ver más abajo). |
+| `informe.txt` | **Léelo primero**: psarc, afinación, referencia en cents, púa/dedos, compases irregulares. |
+| `diagnostico.json` | Todas las medidas internas (tiempos, sonoridad, beats, notas, afinación...). Para depurar: no hace falta mirarlo. |
+| `<nombre>.rs2dlc` | Proyecto de DLC Builder: el `.psarc` se compila desde aquí. Sirve para recompilar a mano. |
+| `<nombre>_bass_RS2.xml` | El arreglo de bajo en formato Rocksmith. |
+| `<nombre>.ogg`, `<nombre>_preview.ogg` | Audio con silencio inicial para el compás COUNT, y vista previa de 28 s. |
+| `portada.png` | Carátula: de internet (iTunes/Deezer), la incrustada en el mp3 o una generada. |
 | `<nombre>_AB.mp3` | **Con cascos**: izquierda = bajo real, derecha = tablatura sintetizada. |
 | `<nombre>_clics.mp3` | La canción con un clic en cada beat, más agudo en el tiempo 1. |
+| `<nombre>.gp5`, `<nombre>.svl` | Tablatura y mapa de beats, para retocar la canción en EOF. |
 | `<nombre>.mid` | La transcripción en MIDI. |
-| `informe.txt` | **Afinación, referencia en cents y púa/dedos** (léelo primero), más tempo y notas dudosas. |
 
-### Lo que detecta solo (mira el informe)
+### Lo que detecta solo (todo va ya dentro del `.psarc`)
 
 - **Afinación**: E estándar, Eb, Drop D, D, Drop C#, C#, Drop C, C, Drop B o B estándar. Se queda en
-  E estándar salvo que la canción tenga notas graves repetidas que no quepan; si las tiene, la nota
-  más grave fija la cuerda grave y la digitación decide entre "drop" y estándar. La afinación va
-  dentro del `.gp5`, así que EOF y DLC Builder la recogen solos. Solo tienes que reafinar el bajo.
-- **Compases irregulares**: el "uno" se sigue compás a compás. Si en algún pasaje hay un compás de 2, 3,
-  5 o 6 tiempos, el script lo detecta, lo pone así en el `.gp5` y la canción vuelve a cuadrar después.
-  El informe dice en qué compases están. En EOF, acepta importar los compases (*time signatures*).
-  Si la rotura es ambigua, puede quedar colocada un compás antes o después de donde está en realidad;
-  las notas suenan igual en su sitio, solo cambia por dónde pasa la barra de compás.
+  E estándar salvo que haya notas graves repetidas que no quepan. Solo tienes que reafinar el bajo:
+  el afinador de Rocksmith te lo pedirá.
 - **Referencia de afinación de la grabación** (cents): muchos discos no están exactamente a La = 440 Hz.
-  El informe te dice qué poner en **Tuning Pitch** en DLC Builder para que el afinador de Rocksmith
-  te deje empastado con el disco. Además, el script descuenta ese desvío al reconocer las notas.
-- **Púa o dedos**: mide el "clic" agudo del ataque de cada nota. A partir de 7 dB, púa; por debajo,
-  dedos. Umbral calibrado con canciones conocidas; si sale a menos de 1 dB del umbral, el informe avisa
-  para que lo compruebes de oído. Si es púa, márcalo en EOF
-  (**Track → Rocksmith → Picked Bass**) o en la casilla **Picked** de DLC Builder.
+  Solo si el desvío es grande (30 cents o más, configurable) se pone como *Tuning Pitch*. Si es menor, se
+  queda en 440 para no obligarte a reafinar. Siempre se tiene en cuenta al reconocer las notas.
+- **Púa o dedos**: a partir de 7 dB de "clic" en el ataque, púa. Si sale cerca del umbral, el informe
+  avisa para que lo compruebes de oído.
+- **Compases irregulares** (2, 3, 5 o 6 tiempos): se siguen compás a compás. El informe da el minuto
+  de cada uno en la canción original.
+- **Carátula, álbum y año**: si el mp3 no los trae, se buscan en iTunes o Deezer. Solo se acepta una
+  carátula si coinciden artista y título.
 
-### Revisión rápida antes de montar el CDLC
+### Revisión rápida
 
 1. Escucha `_clics.mp3`: los clics deben ir con la batería y el agudo caer en el "uno".
 2. Escucha `_AB.mp3` con cascos:
@@ -69,97 +96,82 @@ En `salida\<nombre de la canción>\`:
    - suena solo la derecha → **sobra** una nota;
    - suenan las dos pero desafinan → nota equivocada o en otra octava.
 
-## 4. Montar el CDLC
+## 5. En Rocksmith
 
-### Camino rápido: directo a DLC Builder (sin EOF)
+Para tocar todas las notas desde el principio sin perder el seguimiento: **Riff Repeater** → selecciona
+la canción entera (teclas **0** y **9**) → **Set Difficulty** al 100 %.
 
-1. Abre el `.rs2dlc` en DLC Builder: **Project → Open Project…**, o arrástralo a su ventana.
-   Ya trae el arreglo, el audio, la vista previa, la portada, la afinación, el *Tuning Pitch*, la púa y un tono de bajo.
-2. Pulsa **Build Test** o **Build Release**.
+## 6. Compilar o retocar a mano
 
-Deja marcado **Generate DD levels** en la configuración. Las frases y secciones las crea DLC Builder solo al compilar.
-Si el informe dice "con problemas", es que el proyecto no pasaría las comprobaciones de DLC Builder. Avísame.
+- **Recompilar con DLC Builder**: abre el `.rs2dlc` (**Project → Open Project…**, o arrástralo a su
+  ventana) y pulsa **Build**. Sirve si el `.psarc` no se generó (el informe dice por qué) o si quieres
+  cambiar el tono, la portada…
+- **Corregir notas en Editor on Fire**: crea un proyecto nuevo con el `.ogg` (**File → New**) e importa
+  el `.svl` (**File → Import → Sonic Visualiser**). Luego importa el `.gp5` (**File → Import → Guitar Pro**,
+  pista **PART REAL_BASS**, aceptando los *time signatures*). En DLC Builder sustituye después el XML del
+  arreglo por el que guarde EOF.
 
-### Camino con retoques: pasando por Editor on Fire
-
-Si una canción necesita correcciones (notas de más o de menos que oyes en el A/B), móntala en EOF:
-
-Crea siempre un **proyecto nuevo** por canción y sigue este orden:
-
-1. **File → New** y elige el `.ogg`.
-2. **F9** (propiedades de la canción): revisa artista, título, álbum y año.
-3. **File → Import → Sonic Visualiser** y elige el `.svl`. Si pregunta si desbloquear el mapa de tempo, di que **sí**.
-4. **File → Import → Guitar Pro**, elige el `.gp5` y la pista **PART REAL_BASS**. Si ofrece importar los compases (time signatures), acepta.
-5. Opcional: **Edit → Metronome** y **Edit → Claps** para comprobarlo de oído.
-6. Guarda. El aviso de *fret hand positions* es normal: dale a Aceptar y EOF las genera solo.
-
-### En DLC Builder (si has pasado por EOF)
-
-1. **Add** el XML que guardó EOF, del tipo `PART REAL_BASS_RS2.xml`, de la carpeta del proyecto.
-2. Audio: el `guitar.ogg` de la carpeta del proyecto de EOF. **Create** para la vista previa.
-3. Tono: *A new tone* sirve. Asígnalo como tono base del bajo.
-   En la ficha del arreglo, ajusta **Tuning Pitch** si el informe lo indica, y **Picked** si es con púa.
-   Comprueba que la afinación que muestra el arreglo coincide con la del informe.
-4. Si sale *"The first phrase contains notes"*, puedes darle a **Ignore**: DLC Builder crea las frases solo.
-5. Configuración (engranaje) → **Build**: deja marcado **Generate DD levels**. Sin DD, Rocksmith no
-   guarda el porcentaje ni la evolución de la canción.
-6. **Build Test** o **Build Release**, y el `.psarc` a la carpeta `dlc` de Rocksmith.
-
-Necesitas **Wwise** 2019 o 2021 instalado para que DLC Builder convierta el audio. Lo descargas de
-https://ignition4.customsforge.com/tools/wwise
-
-### En Rocksmith
-
-Para tocar todas las notas desde el principio sin perder el seguimiento:
-**Riff Repeater** → selecciona la canción entera (teclas **0** y **9**) → **Set Difficulty** al 100 %.
-
-## 5. Limitaciones
+## 7. Limitaciones
 
 - Bajo de **4 cuerdas**. Compás de base 4/4, con compases sueltos de 2, 3, 5 o 6 tiempos; no sirve para
-  canciones enteras en 3/4 o 6/8. Afinaciones: las diez de la lista de arriba.
+  canciones enteras en 3/4 o 6/8.
 - La transcripción es automática: ritmo y notas salen bien en general, pero puede haber notas
-  sueltas de más o de menos. Repasa con el A/B y corrige en EOF o en Guitar Pro / TuxGuitar.
+  sueltas de más o de menos. Repasa con el A/B.
 - No detecta técnicas (slides, ligados, slap…): todo sale como notas normales.
 - Funciona mejor cuanto más claro suene el bajo en la mezcla.
 
-## 6. Cómo funciona por dentro
+## 8. Cómo funciona por dentro
 
 1. **Separación del bajo**: modelo MDX *kuielab_b_bass* mediante `audio-separator`.
-2. **Beats y compases**: `madmom` (red neuronal + modelo probabilístico de tempo). Se incluye en
-   `vendor\` una versión 100 % Python, sin compilar, para que se instale en Windows sin
-   compilador. Se ha verificado que da los mismos resultados que la original.
-3. **Notas**: los ataques se detectan con `librosa`, la altura con pYIN y, cuando pYIN duda,
-   con una CQT con suma de armónicos.
-4. **Cuantización** a semicorcheas sobre el grid de beats, con corrección automática del desfase
-   entre ataque detectado y pulso.
-5. **Afinación y digitación**: se elige la afinación como se explica arriba, y la digitación se hace
-   con programación dinámica que minimiza el movimiento de la mano.
-6. **Púa**: contraste de energía entre 2 y 8 kHz entre el ataque (0-45 ms) y el sostenido (80-200 ms).
-7. **Salidas**: `.gp5` con PyGuitarPro, mapa de beats en formato Sonic Visualiser y audio con ffmpeg.
+2. **Beats y compases**: `madmom` (red neuronal + modelo probabilístico), con el "uno" seguido compás a
+   compás. En `vendor\` va una versión 100 % Python de madmom, verificada contra la original.
+3. **Notas**: ataques con `librosa`, altura con pYIN y, cuando pYIN duda, con una CQT con suma de armónicos.
+4. **Cuantización** a semicorcheas, con corrección automática del desfase entre ataque y pulso.
+5. **Afinación y digitación**: programación dinámica que minimiza el movimiento de la mano.
+6. **Arreglo y proyecto**: XML de Rocksmith con posiciones de mano, y proyecto de DLC Builder. Antes de
+   compilar se repiten las mismas comprobaciones que hace DLC Builder.
+7. **Compilación** (`herramientas\cdlc-pack`): usa las librerías de DLC Builder (Rocksmith2014.NET, de
+   iminashi, licencia MIT). Convierte el audio con Wwise, genera la dificultad dinámica y empaqueta el
+   `.psarc` con los mismos ajustes por defecto que el "Build Release" de DLC Builder. Su código va en
+   `herramientas\cdlc-pack\codigo`.
 
 Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
-## 7. Problemas
+## 9. Problemas
 
 - **`instalar.bat` falla al instalar uv**: instálalo a mano desde https://docs.astral.sh/uv/ y vuelve a ejecutarlo.
 - **"No encuentro uv"**: cierra la ventana y vuelve a abrir `procesar.bat`. Si sigue, ejecuta otra vez `instalar.bat`.
-- **Una canción da ERROR**: el resto del lote sigue procesándose. El motivo sale al final, en el resumen.
-- **"tiempo 1 dudoso"**: puede que el compás empiece desplazado. Compruébalo con el archivo de clics.
+- **"sin psarc: … Wwise …"**: no encuentra Wwise. Comprueba que está instalado o pon su ruta en
+  `configuracion.txt` (`wwise = …\WwiseConsole.exe`). Mientras tanto, compila a mano con DLC Builder.
+- **Una canción da ERROR**: el resto del lote sigue. El detalle va en el registro general.
+- **"tiempo 1 dudoso"**: puede que el compás esté desplazado. Compruébalo con el archivo de clics.
 
 ## Historial
 
-- **1.3.1**: el informe da el minuto de cada compás irregular y sus textos reflejan que afinación,
-  Tuning Pitch y púa ya van dentro del proyecto.
-- **1.3**: el script genera directamente el XML del arreglo y el proyecto de DLC Builder (`.rs2dlc`) con
-  portada, vista previa y volumen automático. Ya no hace falta pasar por EOF.
-- **1.2**: compases irregulares (2/4, 3/4, 5/4, 6/4) detectados compás a compás; ya no se descoloca
-  el resto de la canción tras un pasaje que rompe el compás.
-- **1.1.3**: umbral de púa calibrado en 7 dB.
-- **1.1.2**: en tempos rápidos (unos 140 BPM o más) la tablatura podía salir desplazada una semicorchea;
-  corregido. La afinación grave solo se elige si el detector principal (pYIN) ve notas graves repetidas,
-  para evitar falsos Eb/B por errores de octava.
-- **1.1.1**: corregido el error "'list' argument must have no negative elements" en canciones
-  cuyo bajo entra antes del primer compás completo.
-- **1.1**: detección automática de afinación (10 afinaciones de 4 cuerdas), medición del desvío de
-  afinación de la grabación (cents) con corrección al reconocer notas, e índice de púa/dedos (experimental).
+- **2.3**: arreglado un corrimiento de toda la tablatura una semicorchea en algunas canciones (las notas
+  del tiempo y del "y" caían en la "e" y la "a"). Las frases repetidas se reconocen aunque la
+  transcripción no salga idéntica, así comparten progreso de verdad. Etiquetas de descargas de YouTube
+  ("ArtistaVEVO", "(Videoclip)") limpiadas; espacios dobles en títulos; el álbum toma la grafía de la tienda.
+- **2.2.1**: arreglada la DD propia: faltaban los niveles de referencia de cada frase, y el juego daba
+  100 % de dominio y puntuaba solo sobre las notas del nivel más fácil.
+- **2.2**: dificultad dinámica propia (`dificultad = propia`): cinco niveles iguales en toda la canción
+  (una nota por compás, por medio compás, por tiempo, por corchea y completa), frases de 4 compases y
+  las repetidas comparten progreso. Se puede volver a la de DLC Builder o quitarla (`dlcbuilder`, `ninguna`).
+- **2.1.1**: artista y título desde las etiquetas ID3 del mp3 (si son válidas); la carpeta de salida
+  se llama `Artista - Título` aunque el archivo se llame "01 - pista.mp3".
+- **2.1**: diagnóstico completo de cada canción (`diagnostico.json` en su carpeta y una sección
+  DIAGNÓSTICO al final del registro, también en los errores); el compilador comprueba el psarc
+  recién hecho (niveles de DD, frases, notas). Arreglados: compases irregulares falsos al final,
+  textos con acentos rotos ("EdiciÃ³n"), acentos perdidos en el nombre del psarc y carátulas de "EP"
+  o "Imprescindibles".
+- **2.0.2**: el *Tuning Pitch* solo cambia con desvíos de 30 cents o más (`umbral_cents`).
+- **2.0.1**: la carátula, el álbum y el año salen del disco original y no de recopilatorios ni directos.
+- **2.0**: compilación automática a `.psarc` (sin abrir DLC Builder) a una carpeta propia, configurable
+  en `configuracion.txt`. Carátula, álbum y año desde iTunes/Deezer.
+- **1.3.2**: registro general de cada tanda.
+- **1.3.1**: minuto de cada compás irregular en el informe; textos al día.
+- **1.3**: XML del arreglo y proyecto de DLC Builder generados directamente; ya no hace falta EOF.
+- **1.2**: compases irregulares detectados compás a compás.
+- **1.1.x**: afinación automática, referencia en cents, índice de púa (umbral 7 dB) y correcciones
+  (tempos rápidos, falsos Eb/B, canciones que empiezan a mitad de compás).
 - **1.0**: primera versión.

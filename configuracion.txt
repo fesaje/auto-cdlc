@@ -1,0 +1,27 @@
+# Configuración de cdlc-bajo. Las líneas que empiezan por # no cuentan.
+
+# Carpeta donde se dejan los .psarc. Si pones la carpeta dlc de Rocksmith, aparecen directamente en el juego.
+# Ejemplo: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
+# Si no pones nada, van a la carpeta psarc que está junto a este archivo.
+carpeta_psarc =
+
+# Compilar los .psarc (si) o dejar solo el proyecto .rs2dlc para DLC Builder (no).
+compilar_psarc = si
+
+# Buscar las carátulas en internet (iTunes / Deezer).
+buscar_caratulas = si
+
+# Ruta a WwiseConsole.exe. Normalmente se encuentra sola; rellénala solo si da error.
+# Ejemplo: wwise = C:\Program Files (x86)\Audiokinetic\Wwise 2021.1.14.8108\Authoring\x64\Release\bin\WwiseConsole.exe
+wwise =
+
+# Desvío mínimo (en cents) de la grabación respecto a La=440 para cambiar el Tuning Pitch.
+# Por debajo se deja en 440 y no tienes que reafinar en cada canción. 100 cents = 1 semitono.
+umbral_cents = 30
+
+# Dificultad dinámica (DD), la que va subiendo de nivel según tocas bien:
+#   propia     = niveles por pulso, iguales en toda la canción: 1 nota por compás, por medio compás,
+#                por tiempo, por corchea y completa (recomendada)
+#   dlcbuilder = la que genera DLC Builder (la de antes)
+#   ninguna    = sin DD: siempre la canción completa, pero Rocksmith no muestra porcentaje
+dificultad = propia
