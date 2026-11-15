@@ -30,3 +30,11 @@ dificultad = propia
 #   0  = desde lo más sencillo (una nota por compás)
 #   60 = empieza ya con al menos el 60 % de las notas de cada frase (se quitan los niveles más fáciles)
 dificultad_inicial = 0
+
+# Notas repetidas (La-La-La-La): cortar las notas largas donde el bajo vuelve a pulsar la misma nota.
+# Si ves notas partidas que en realidad son una sola nota larga, pon "no" o sube el umbral (en dB).
+partir_repetidas = si
+umbral_reataque_db = 3
+
+# Tono de cada nota con CREPE (red neuronal, más fiable en notas graves que el método anterior).
+tono_crepe = si

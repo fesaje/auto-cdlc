@@ -148,6 +148,11 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.4**: tres motores nuevos. (1) Las notas repetidas (La-La-La-La) que salían como una sola nota
+  mantenida se cortan donde el bajo vuelve a pulsar (`partir_repetidas`, `umbral_reataque_db`).
+  (2) El tono de cada nota sale de CREPE (`tono_crepe`). (3) El tiempo 1 sale de Beat This! cuando
+  cuenta el mismo pulso que madmom; su modelo (81 MB) se descarga solo la primera vez a `modelos\`
+  con comprobación de huella, o puedes copiar ahí `beat_this-final0.ckpt`.
 - **2.3.2**: carátula, álbum y año salen siempre del mismo disco (antes podía salir la portada del
   disco original con el nombre y el año del recopilatorio que traían las etiquetas).
 - **2.3.1**: `dificultad_inicial` en `configuracion.txt`: la DD propia empieza con ese % de notas de cada

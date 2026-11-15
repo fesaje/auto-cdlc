@@ -35,12 +35,15 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.3.2"
+VERSION = "2.4"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
+PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
+UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
+TONO_CREPE = True          # tono de cada nota con CREPE (más fiable en graves que pYIN); configuracion.txt: tono_crepe
 DD_INICIAL = 0            # % de notas del nivel más fácil; configuracion.txt: dificultad_inicial
 DD_MODO = "propia"        # propia | dlcbuilder | ninguna; configuracion.txt: dificultad
 UMBRAL_CENTS = 30.0       # desvío mínimo (cents) para cambiar el Tuning Pitch; configuracion.txt: umbral_cents
@@ -253,14 +256,85 @@ def separar_bajo(wav_mezcla, tmp):
 
 
 # ---------------- 2. beats y compases (madmom) ----------------
+BEAT_THIS_SHA256 = "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
+BEAT_THIS_URLS = ["https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt",
+                  "https://huggingface.co/rtikw/localmusic-assets/resolve/main/analysis/beat_this-final0.ckpt"]
+
+
+def modelo_beat_this():
+    """Ruta del modelo de Beat This! (se descarga una vez y se comprueba su huella SHA-256)."""
+    import hashlib, urllib.request
+    ruta = AQUI / "modelos" / "beat_this-final0.ckpt"
+
+    def valido(r):
+        if not r.exists() or r.stat().st_size < 50_000_000:
+            return False
+        h = hashlib.sha256()
+        with open(r, "rb") as f:
+            for bloque in iter(lambda: f.read(1 << 20), b""):
+                h.update(bloque)
+        return h.hexdigest() == BEAT_THIS_SHA256
+    if valido(ruta):
+        return ruta
+    if getattr(modelo_beat_this, "fallo", False):
+        return None                                  # ya falló en esta tanda: no reintentar en cada canción
+    ruta.parent.mkdir(exist_ok=True)
+    for url in BEAT_THIS_URLS:
+        try:
+            log(f"  Descargando el modelo de Beat This! (una sola vez, 81 MB)...")
+            tmp = ruta.with_suffix(".parcial")
+            urllib.request.urlretrieve(url, tmp)
+            if valido(tmp):
+                tmp.replace(ruta); return ruta
+            tmp.unlink(missing_ok=True)
+        except Exception as ex:
+            DIAG.setdefault("beat_this_descarga", []).append(f"{url.split('/')[2]}: {str(ex)[:120]}")
+    modelo_beat_this.fallo = True
+    log("  Aviso: no he podido descargar el modelo de Beat This!; el tiempo 1 sale solo de madmom.")
+    return None
+
+
+def activacion_beat_this(wav_mezcla):
+    """Probabilidad de beat y de tiempo 1 de Beat This! (CPJKU, 2024), a 100 tramas/s como madmom."""
+    ckpt = modelo_beat_this()
+    if ckpt is None:
+        return None, None
+    from beat_this.inference import Audio2Frames, File2Beats
+    from beat_this.preprocessing import load_audio
+    sig, sr = load_audio(str(wav_mezcla))
+    b, d = Audio2Frames(checkpoint_path=str(ckpt), device="cpu")(sig, sr)
+    act = np.stack([1 / (1 + np.exp(-b.numpy())), 1 / (1 + np.exp(-d.numpy()))], 1)
+    beats, _ = File2Beats(checkpoint_path=str(ckpt), device="cpu", dbn=False)(str(wav_mezcla))
+    return np.repeat(act, 2, axis=0), np.asarray(beats)
+
+
 def detectar_beats(wav_mezcla):
-    """Beats (madmom DBN) y activación de 'tiempo 1' de la red de compases de madmom (100 fps)."""
+    """Beats con madmom (DBN, tempo limitado a 60-180) y activación de 'tiempo 1'.
+    El tiempo 1 sale de Beat This! cuando cuenta los mismos beats que madmom; si cuenta al doble o a la
+    mitad (pasa en canciones rápidas) o no está disponible, de la red de compases de madmom."""
     from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
     from madmom.features.downbeats import RNNDownBeatProcessor
-    beats = DBNBeatTrackingProcessor(fps=100, min_bpm=BPM_MIN, max_bpm=BPM_MAX)(
-        RNNBeatProcessor()(str(wav_mezcla)))
-    act = RNNDownBeatProcessor()(str(wav_mezcla))
-    return np.asarray(beats), np.asarray(act)
+    beats = np.asarray(DBNBeatTrackingProcessor(fps=100, min_bpm=BPM_MIN, max_bpm=BPM_MAX)(
+        RNNBeatProcessor()(str(wav_mezcla))))
+    act = np.asarray(RNNDownBeatProcessor()(str(wav_mezcla)))
+    info = {"motor_tiempo_1": "madmom"}
+    try:
+        act_bt, beats_bt = activacion_beat_this(wav_mezcla)
+    except Exception as ex:
+        act_bt, beats_bt = None, None
+        info["beat_this_error"] = str(ex)[:200]
+    if act_bt is not None and len(beats_bt) > 8 and len(beats) > 8:
+        r = float(np.median(np.diff(beats_bt)) / np.median(np.diff(beats)))
+        n = min(len(act), len(act_bt))
+        info["beat_this_relacion_tempo"] = round(r, 2)
+        if 0.85 < r < 1.15:
+            act = act_bt[:n].copy(); info["motor_tiempo_1"] = "beat_this"
+        else:
+            # Beat This! cuenta el pulso al doble o a la mitad: su "tiempo 1" marca medios compases (o dos
+            # compases) y confundiría al detector de compases; se queda solo madmom
+            info["motor_tiempo_1"] = "madmom (beat_this a otro tempo)"
+    DIAG["deteccion_pulso"] = info
+    return beats, act
 
 
 # probabilidades de compases irregulares (por compás): bajas para que sólo aparezcan con evidencia clara
@@ -352,7 +426,68 @@ def construir_grid(beats, act, duracion):
 
 
 # ---------------- 3. notas ----------------
-def transcribir(bajo_wav):
+def partir_reataques(notas, y, desde=3.0, sep=0.06, min_dur=0.12):
+    """El detector de ataques no ve bien los golpes repetidos sobre la misma nota (La-La-La-La): la cuerda
+    sigue sonando y apenas cambia nada. Aquí se buscan subidas rápidas de energía en la banda del bajo
+    (hasta 400 Hz) dentro de cada nota y se corta en ellas."""
+    import librosa, scipy.signal as ss
+    hop = 64
+    b, a = ss.butter(4, 400 / (SR / 2), "low")
+    e = librosa.amplitude_to_db(librosa.feature.rms(y=ss.filtfilt(b, a, y), frame_length=512, hop_length=hop)[0] + 1e-9)
+    w1, w2 = max(1, int(0.04 * SR / hop)), max(1, int(0.03 * SR / hop))
+    sube = np.full(len(e), -99.0)
+    for i in range(w1, len(e) - w2):
+        sube[i] = e[i:i + w2].max() - e[i - w1:i].min()
+    picos, _ = ss.find_peaks(sube, height=desde, distance=max(1, int(sep * SR / hop)))
+    t_re = librosa.frames_to_time(picos, sr=SR, hop_length=hop)
+    fr = lambda t: int(round(t * SR / hop))
+    out = []
+    for t0, t1, p in notas:
+        dentro = []
+        for t in t_re[(t_re >= t0 + min_dur) & (t_re <= t1 - 0.07)]:
+            # tiene que haber habido una caída antes de la subida: si no, es el propio ataque de la nota
+            # (en graves la energía tarda en llegar a su máximo) y no un golpe nuevo
+            if dentro and t - dentro[-1] < min_dur:
+                continue
+            ini = fr(dentro[-1] if dentro else t0)
+            i = fr(t)
+            antes = e[ini:max(ini, i - w1)]          # tramo previo al valle
+            if len(antes) and antes.max() - e[max(ini, i - w1):i].min() >= 1.5:
+                dentro.append(float(t))
+        bordes = [t0] + dentro + [t1]
+        out += [(bordes[k], bordes[k + 1], p) for k in range(len(bordes) - 1)]
+    return out
+
+
+def retonar_crepe(notas, y, cents):
+    """Tono de cada nota con CREPE (red neuronal de tono, modelo 'tiny'). CREPE falla en las notas más
+    graves del bajo, así que se le pasa el audio una octava más alto (se reproduce al doble de velocidad)
+    y luego se baja la octava. Donde CREPE no está seguro se queda el tono de pYIN."""
+    try:
+        import librosa, torch, torchcrepe
+    except Exception as ex:
+        return notas, {"error": f"CREPE no disponible: {ex}"[:200]}
+    y8 = librosa.resample(y, orig_sr=SR, target_sr=8000)
+    with torch.no_grad():
+        f, per = torchcrepe.predict(torch.tensor(y8, dtype=torch.float32)[None], 16000, hop_length=80,
+                                    fmin=50, fmax=1000, model="tiny", return_periodicity=True,
+                                    batch_size=2048, device="cpu")
+    midi = librosa.hz_to_midi(f[0].numpy() / 2) - cents / 100
+    per = per[0].numpy()
+    out, usadas, cambiadas = [], 0, 0
+    for t0, t1, p in notas:
+        a = int(t0 * 100); b = max(a + 1, int((t0 + 0.6 * (t1 - t0)) * 100))
+        ok = per[a:b] > 0.3
+        if ok.sum() >= 1:
+            q = int(round(float(np.median(midi[a:b][ok]))))
+            if 20 <= q <= 43 + TRASTE_MAX:
+                usadas += 1; cambiadas += q != p; p = q
+        out.append((t0, t1, p))
+    return out, {"notas_con_tono_crepe": usadas, "distintas_de_pyin": cambiadas,
+                 "periodicidad_media": round(float(np.mean(per)), 3)}
+
+
+def transcribir(bajo_wav, semicorchea=None):
     import librosa
     y, _ = librosa.load(str(bajo_wav), sr=SR, mono=True)
     o_env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP)
@@ -405,8 +540,18 @@ def transcribir(bajo_wav):
             notas.append((float(t0), float(t1), p))
         else:
             descartes["fuera_de_rango"] += 1
+    n_antes = len(notas)
+    if PARTIR_REPETIDAS and notas:
+        # tras el ataque de una nota grave hay un pico, un bajón y luego el cuerpo de la nota: en ese tramo
+        # no se corta (como mínimo 120 ms, o 3/4 de semicorchea si la canción es lenta)
+        guarda = max(0.12, 0.75 * semicorchea) if semicorchea else 0.12
+        notas = partir_reataques(notas, y, UMBRAL_REATAQUE_DB, min_dur=guarda)
+    info_crepe = {}
+    if TONO_CREPE and notas:
+        notas, info_crepe = retonar_crepe(notas, y, cents)
     dur = np.array([t1 - t0 for t0, t1, _ in notas]) if notas else np.zeros(1)
     DIAG["transcripcion"] = {
+        "notas_antes_de_partir": n_antes, "cortes_por_reataque": len(notas) - n_antes, "crepe": info_crepe,
         "ataques": len(ataques), "notas": len(notas), "por_pyin": len(pitches_pyin), "por_cqt": n_cqt,
         "descartes": descartes,
         "tramas_con_tono_fiable_pct": round(100 * float(fiable.mean()), 1),
@@ -1250,7 +1395,7 @@ def procesar(ruta, salida, forzar):
         grid, barras, bpm, conf, irregulares = construir_grid(beats, act, duracion)
         marca("beats_y_compases")
         log("  [3/6] Transcribiendo notas...")
-        y, notas, n_ataques, n_cqt, cents, pua, pitches_pyin = transcribir(bajo)
+        y, notas, n_ataques, n_cqt, cents, pua, pitches_pyin = transcribir(bajo, 60.0 / bpm / 4)
         marca("transcribir")
         if not notas:
             raise RuntimeError("no se ha detectado ninguna nota de bajo")
@@ -1496,7 +1641,8 @@ class Registro:
             self.cabecera += "Versiones: " + json.dumps(versiones(), ensure_ascii=False) + "\n"
             self.cabecera += (f"Configuración: psarc={'si' if COMPILAR else 'no'} | carpeta={CARPETA_PSARC} | "
                               f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} (inicial {DD_INICIAL:.0f} %) | "
-                              f"wwise={WWISE or 'automático'}\n")
+                              f"wwise={WWISE or 'automático'} | partir_repetidas={'si' if PARTIR_REPETIDAS else 'no'} "
+                              f"({UMBRAL_REATAQUE_DB} dB) | tono_crepe={'si' if TONO_CREPE else 'no'}\n")
         except Exception:
             pass
         self._guardar()
@@ -1542,7 +1688,15 @@ def main():
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     a = ap.parse_args()
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
+    global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE
     conf = leer_configuracion()
+    no = ("no", "false", "0")
+    PARTIR_REPETIDAS = conf.get("partir_repetidas", "si").lower() not in no
+    TONO_CREPE = conf.get("tono_crepe", "si").lower() not in no
+    try:
+        UMBRAL_REATAQUE_DB = float(conf.get("umbral_reataque_db", UMBRAL_REATAQUE_DB))
+    except ValueError:
+        log("Aviso: umbral_reataque_db no es un número en configuracion.txt; uso 3")
     try:
         UMBRAL_CENTS = float(conf.get("umbral_cents", UMBRAL_CENTS))
         dd = conf.get("dificultad", DD_MODO).strip().lower()
