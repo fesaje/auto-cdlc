@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.5.1"
+VERSION = "2.5.2"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -898,6 +898,47 @@ def _es_recopilatorio(album):
                 or re.fullmatch(r"(cd|disc|disco|vol|volumen|volume) ?\d*", _normalizar(album)))
 
 
+def buscar_album(artista, album, anio_etiqueta=None):
+    """Si las etiquetas dicen de qué disco es la canción, se busca ESE disco (artista + álbum) y no la
+    canción: así la portada es la del disco que tienes, aunque sea un directo o un recopilatorio."""
+    import urllib.parse, unicodedata
+    q = urllib.parse.quote(f"{artista} {album}")
+    diag = DIAG.setdefault("caratula", {})
+    diag["busqueda_disco"] = f"{artista} {album}"
+    llano = lambda x: unicodedata.normalize("NFKD", x or "").encode("ascii", "ignore").decode().lower().strip()
+    try:
+        cands = [r for r in _http_json(f"https://itunes.apple.com/search?term={q}&entity=album&limit=25&country=ES").get("results", [])
+                 if _parecido(r.get("artistName"), artista) >= 0.8 and _parecido(r.get("collectionName"), album) >= 0.85
+                 and r.get("artworkUrl100")]
+        diag["itunes_discos"] = [f'{r.get("collectionName")} ({(r.get("releaseDate") or "")[:4]})' for r in cands]
+        if cands:
+            # el que se llama exactamente igual, y si hay varias ediciones, la del año de las etiquetas
+            r = min(cands, key=lambda r: (llano(r.get("collectionName")) != llano(album),
+                                          anio_etiqueta is not None and (r.get("releaseDate") or "")[:4] != str(anio_etiqueta),
+                                          r.get("releaseDate") or "9999"))
+            anio = (r.get("releaseDate") or "")[:4]
+            diag["elegida"] = f"iTunes (disco): {r.get('collectionName')} ({anio})"
+            return {"fuente": "iTunes", "url": r["artworkUrl100"].replace("100x100bb", "600x600bb"),
+                    # el nombre del disco, el de tus etiquetas (la tienda a veces lo censura: "M****a")
+                    "album": album, "year": int(anio) if anio.isdigit() else None}
+    except Exception as ex:
+        diag["itunes_disco_error"] = str(ex)[:200]
+    try:
+        for r in _http_json(f"https://api.deezer.com/search/album?q={q}&limit=10").get("data", []):
+            if _parecido(r["artist"]["name"], artista) >= 0.8 and _parecido(r["title"], album) >= 0.85 and r.get("cover_xl"):
+                anio = None
+                try:
+                    fecha = _http_json(f"https://api.deezer.com/album/{r['id']}").get("release_date", "")
+                    anio = int(fecha[:4]) if fecha[:4].isdigit() else None
+                except Exception:
+                    pass
+                diag["elegida"] = f"Deezer (disco): {r.get('title')} ({anio})"
+                return {"fuente": "Deezer", "url": r["cover_xl"], "album": album, "year": anio}
+    except Exception as ex:
+        diag["deezer_disco_error"] = str(ex)[:200]
+    return None
+
+
 def buscar_caratula(artista, titulo):
     """Busca la canción en iTunes y, si no, en Deezer. Exige que coincidan artista y título.
     Devuelve {fuente, url, album, year} o None (sin conexión o sin coincidencia)."""
@@ -1514,7 +1555,12 @@ def procesar(ruta, salida, forzar):
 
         # proyecto listo para DLC Builder: XML del arreglo, preview, portada y .rs2dlc
         meta = {"artista": artista, "titulo": titulo, **album_y_anio(ruta)}
-        caratula = None if SIN_INTERNET else buscar_caratula(artista, titulo)
+        caratula = None
+        if not SIN_INTERNET:
+            if meta.get("album") and _etiqueta_valida(meta["album"]):
+                caratula = buscar_album(artista, meta["album"], meta.get("year") if meta.get("year_de_etiqueta") else None)
+            if caratula is None:
+                caratula = buscar_caratula(artista, titulo)
         if caratula:
             # carátula, álbum y año salen del mismo disco (el original que eligió la búsqueda), para que no
             # aparezca la portada de un disco con el nombre y el año de otro (p. ej. un recopilatorio)

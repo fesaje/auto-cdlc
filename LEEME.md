@@ -148,6 +148,8 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.5.2**: si las etiquetas traen el álbum, la carátula y el año salen de ESE disco (búsqueda artista +
+  álbum) y el nombre del disco es el de tus etiquetas. Solo si no se encuentra se busca por la canción.
 - **2.5.1**: ritmo más fiel: cada nota se coloca desde el pico de su ataque y no desde el inicio
   "retrocedido", que a veces caía muy atrás y adelantaba la nota una semicorchea (al "a" del tiempo
   anterior). En "Mi furia paranoica" las notas fuera de su sitio bajan del 19 % al 7 %. Los empates de tono
