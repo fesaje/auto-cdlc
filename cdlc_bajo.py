@@ -35,12 +35,13 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.5"
+VERSION = "2.5.1"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
+ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
 PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
 UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
 TONO_CREPE = True          # tono de cada nota con CREPE (más fiable en graves que pYIN); configuracion.txt: tono_crepe
@@ -496,6 +497,13 @@ def retonar_crepe(notas, y, cents):
     midi = librosa.hz_to_midi(f[0].numpy() / 2) - cents / 100
     per = per[0].numpy()
     escala, nombre_ton = tonalidad(notas)
+    # las notas "de la canción" se miden en la propia canción: así se respetan los modos (en Re mixolidio
+    # el Do natural es tan normal como el Do#, y la plantilla de Re mayor lo daría por extraño)
+    peso = np.zeros(12)
+    for t0, t1, p in notas:
+        peso[int(p) % 12] += max(t1 - t0, 0.05)
+    peso /= max(peso.sum(), 1e-9)
+    escala = {k for k in range(12) if peso[k] >= 0.04} | ({k for k in escala if peso[k] >= 0.02})
     out, usadas, cambiadas, por_tonalidad = [], 0, 0, 0
     for t0, t1, p in notas:
         a = int(t0 * 100); b = max(a + 1, int((t0 + 0.6 * (t1 - t0)) * 100))
@@ -538,6 +546,17 @@ def transcribir(bajo_wav, semicorchea=None):
     o_env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP)
     ataques = librosa.onset.onset_detect(onset_envelope=o_env, sr=SR, hop_length=HOP,
                                          backtrack=True, units="time")
+    # Para el RITMO no sirve el inicio "retrocedido" (backtrack): retrocede hasta el mínimo de energía
+    # anterior, y cuando la nota previa sigue sonando ese mínimo puede estar muy atrás. La nota acababa
+    # una semicorchea antes (en la "a" del tiempo anterior) en vez de en el tiempo. Se usa el pico del
+    # ataque menos el retroceso típico de la canción: mismo punto de referencia, sin los casos extremos.
+    picos_on = librosa.onset.onset_detect(onset_envelope=o_env, sr=SR, hop_length=HOP,
+                                          backtrack=False, units="time")
+    if ATAQUE_POR_PICO and len(picos_on) == len(ataques) and len(ataques) > 4:
+        retroceso = float(np.median(picos_on - ataques))
+        t_ritmo = list(picos_on - retroceso)
+    else:
+        retroceso, t_ritmo = None, list(ataques)
     f0, _, vp = librosa.pyin(y, fmin=30, fmax=500, sr=SR, hop_length=HOP, frame_length=2048)
     tiempos = librosa.times_like(f0, sr=SR, hop_length=HOP)
     rms_db = librosa.amplitude_to_db(librosa.feature.rms(y=y, hop_length=HOP, frame_length=2048)[0], ref=1.0)
@@ -582,7 +601,7 @@ def transcribir(bajo_wav, semicorchea=None):
         else:
             p = nota_cqt(idx[:max(4, len(idx) // 2)]); n_cqt += 1
         if 20 <= p <= 43 + TRASTE_MAX:
-            notas.append((float(t0), float(t1), p))
+            notas.append((float(min(t_ritmo[i], t1 - 0.02)), float(t1), p))
         else:
             descartes["fuera_de_rango"] += 1
     n_antes = len(notas)
@@ -596,6 +615,7 @@ def transcribir(bajo_wav, semicorchea=None):
         notas, info_crepe = retonar_crepe(notas, y, cents)
     dur = np.array([t1 - t0 for t0, t1, _ in notas]) if notas else np.zeros(1)
     DIAG["transcripcion"] = {
+        "retroceso_tipico_ms": round(retroceso * 1000) if retroceso is not None else None,
         "notas_antes_de_partir": n_antes, "cortes_por_reataque": len(notas) - n_antes, "crepe": info_crepe,
         "ataques": len(ataques), "notas": len(notas), "por_pyin": len(pitches_pyin), "por_cqt": n_cqt,
         "descartes": descartes,

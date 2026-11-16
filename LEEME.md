@@ -148,6 +148,10 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.5.1**: ritmo más fiel: cada nota se coloca desde el pico de su ataque y no desde el inicio
+  "retrocedido", que a veces caía muy atrás y adelantaba la nota una semicorchea (al "a" del tiempo
+  anterior). En "Mi furia paranoica" las notas fuera de su sitio bajan del 19 % al 7 %. Los empates de tono
+  se resuelven con las notas que usa la propia canción (respeta modos como el mixolidio).
 - **2.5**: DD más parecida a la de las canciones oficiales: hasta 10 niveles por frase, empezando con
   una nota cada dos compases. Cada paso rítmico entra primero en los compases impares de la frase y luego
   en todos (como el DDC de la comunidad). Con `dificultad_inicial` se quitan los niveles más fáciles.
