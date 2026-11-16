@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.4"
+VERSION = "2.5"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -299,12 +299,13 @@ def activacion_beat_this(wav_mezcla):
     ckpt = modelo_beat_this()
     if ckpt is None:
         return None, None
-    from beat_this.inference import Audio2Frames, File2Beats
+    from beat_this.inference import Audio2Frames
+    from beat_this.model.postprocessor import Postprocessor
     from beat_this.preprocessing import load_audio
     sig, sr = load_audio(str(wav_mezcla))
-    b, d = Audio2Frames(checkpoint_path=str(ckpt), device="cpu")(sig, sr)
+    b, d = Audio2Frames(checkpoint_path=str(ckpt), device="cpu")(sig, sr)   # una sola pasada de la red
+    beats, _ = Postprocessor(type="minimal")(b, d)
     act = np.stack([1 / (1 + np.exp(-b.numpy())), 1 / (1 + np.exp(-d.numpy()))], 1)
-    beats, _ = File2Beats(checkpoint_path=str(ckpt), device="cpu", dbn=False)(str(wav_mezcla))
     return np.repeat(act, 2, axis=0), np.asarray(beats)
 
 
@@ -327,8 +328,20 @@ def detectar_beats(wav_mezcla):
         r = float(np.median(np.diff(beats_bt)) / np.median(np.diff(beats)))
         n = min(len(act), len(act_bt))
         info["beat_this_relacion_tempo"] = round(r, 2)
+        ibi = np.diff(beats)
+        inestable = float(np.mean(np.abs(ibi / np.median(ibi) - 1) > 0.3))
+        info["madmom_beats_inestables_pct"] = round(100 * inestable, 1)
         if 0.85 < r < 1.15:
             act = act_bt[:n].copy(); info["motor_tiempo_1"] = "beat_this"
+        elif 1.8 < r < 2.2:
+            # Beat This! cuenta a la mitad (blancas): sus tiempos 1 siguen cayendo en principios de compás,
+            # así que su activación sirve. Si además madmom salta entre tempos (dobla y desdobla), se usan
+            # los beats de Beat This! partidos por la mitad, que son más estables
+            act = act_bt[:n].copy(); info["motor_tiempo_1"] = "beat_this (a mitad de tempo)"
+            if inestable > 0.05:
+                medios = (beats_bt[:-1] + beats_bt[1:]) / 2
+                beats = np.sort(np.concatenate([beats_bt, medios]))
+                info["motor_pulso"] = "beat_this x2 (madmom inestable)"
         else:
             # Beat This! cuenta el pulso al doble o a la mitad: su "tiempo 1" marca medios compases (o dos
             # compases) y confundiría al detector de compases; se queda solo madmom
@@ -441,8 +454,10 @@ def partir_reataques(notas, y, desde=3.0, sep=0.06, min_dur=0.12):
     picos, _ = ss.find_peaks(sube, height=desde, distance=max(1, int(sep * SR / hop)))
     t_re = librosa.frames_to_time(picos, sr=SR, hop_length=hop)
     fr = lambda t: int(round(t * SR / hop))
+    techo = e.max()
     out = []
     for t0, t1, p in notas:
+        pico_nota = e[fr(t0):max(fr(t1), fr(t0) + 1)].max()
         dentro = []
         for t in t_re[(t_re >= t0 + min_dur) & (t_re <= t1 - 0.07)]:
             # tiene que haber habido una caída antes de la subida: si no, es el propio ataque de la nota
@@ -452,6 +467,12 @@ def partir_reataques(notas, y, desde=3.0, sep=0.06, min_dur=0.12):
             ini = fr(dentro[-1] if dentro else t0)
             i = fr(t)
             antes = e[ini:max(ini, i - w1)]          # tramo previo al valle
+            # y el golpe nuevo tiene que sonar como una nota: cerca del pico de la nota y por encima del
+            # ruido de fondo. Si no, es la cola de la nota apagándose en un silencio (el ruido sube y baja
+            # unos dB y parecería un ataque): de ahí salían notas fantasma en los tramos sin bajo
+            nuevo = e[i:i + w2].max()
+            if nuevo < pico_nota - 12 or nuevo < techo + ENERGIA_MIN_DB + 10:
+                continue
             if len(antes) and antes.max() - e[max(ini, i - w1):i].min() >= 1.5:
                 dentro.append(float(t))
         bordes = [t0] + dentro + [t1]
@@ -474,17 +495,41 @@ def retonar_crepe(notas, y, cents):
                                     batch_size=2048, device="cpu")
     midi = librosa.hz_to_midi(f[0].numpy() / 2) - cents / 100
     per = per[0].numpy()
-    out, usadas, cambiadas = [], 0, 0
+    escala, nombre_ton = tonalidad(notas)
+    out, usadas, cambiadas, por_tonalidad = [], 0, 0, 0
     for t0, t1, p in notas:
         a = int(t0 * 100); b = max(a + 1, int((t0 + 0.6 * (t1 - t0)) * 100))
         ok = per[a:b] > 0.3
         if ok.sum() >= 1:
             q = int(round(float(np.median(midi[a:b][ok]))))
             if 20 <= q <= 43 + TRASTE_MAX:
-                usadas += 1; cambiadas += q != p; p = q
+                usadas += 1
+                if q != p and abs(q - p) <= 2 and (p % 12) in escala and (q % 12) not in escala:
+                    # pYIN y CREPE discrepan un semitono o dos y solo pYIN cae en la tonalidad: suele ser
+                    # un deslizamiento o una nota algo desafinada; se queda la de la tonalidad
+                    por_tonalidad += 1
+                else:
+                    cambiadas += q != p; p = q
         out.append((t0, t1, p))
     return out, {"notas_con_tono_crepe": usadas, "distintas_de_pyin": cambiadas,
+                 "tonalidad_estimada": nombre_ton, "dudas_resueltas_por_tonalidad": por_tonalidad,
                  "periodicidad_media": round(float(np.mean(per)), 3)}
+
+
+def tonalidad(notas):
+    """Tonalidad aproximada (perfiles de Krumhansl) a partir de las notas pesadas por su duración.
+    Devuelve las clases de nota de su escala (en menor, con la sensible) y un nombre."""
+    hist = np.zeros(12)
+    for t0, t1, p in notas:
+        hist[int(p) % 12] += max(t1 - t0, 0.05)
+    mayor = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+    menor = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+    mejor = max(((np.corrcoef(hist, np.roll(perfil, k))[0, 1], k, modo)
+                 for k in range(12) for modo, perfil in (("mayor", mayor), ("menor", menor))))
+    _, k, modo = mejor
+    grados = [0, 2, 4, 5, 7, 9, 11] if modo == "mayor" else [0, 2, 3, 5, 7, 8, 10, 11]
+    nombres = "Do Do# Re Re# Mi Fa Fa# Sol Sol# La La# Si".split()
+    return {(k + g) % 12 for g in grados}, f"{nombres[k]} {modo}"
 
 
 def transcribir(bajo_wav, semicorchea=None):
@@ -991,11 +1036,13 @@ def niveles_dd(tab, compases, completo):
     Devuelve, para cada nota de tab, el nivel mínimo en el que aparece."""
     inicios = np.array([b for b, _ in compases])
     nivel = np.full(len(tab), 4)
+    compas_de = np.zeros(len(tab), dtype=int)
     grupos = {}
     for k, n in enumerate(tab):
         bi = n[0] / 4 + 4                       # posición en beats del audio (con COUNT)
         c = int(np.clip(np.searchsorted(inicios, bi + 1e-6, side="right") - 1, 0, len(compases) - 1))
         b, nb = compases[c]
+        compas_de[k] = c
         pos = int(round((bi - b) * 4))          # semicorchea dentro del compás
         unidades = {0: nb * 4, 1: (nb * 2 if nb % 2 == 0 else nb * 4), 2: 4, 3: 2}
         for d, u in unidades.items():
@@ -1007,7 +1054,7 @@ def niveles_dd(tab, compases, completo):
                 grupos[clave] = ((fuerza, n[0]), k)
     for (d, _, _), (_, k) in grupos.items():
         nivel[k] = min(nivel[k], d)
-    return nivel
+    return nivel, compas_de
 
 
 def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, duracion_audio):
@@ -1074,27 +1121,32 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
         cortes = [beats[b] for b in bloques]
         cortes[0] = t_musica
         lim = cortes + [t_end]
-        nivel_nota = niveles_dd(tab, compases, completo) if DD_MODO == "propia" else np.full(len(notas), 0)
+        if DD_MODO == "propia":
+            nivel_nota, compas_nota = niveles_dd(tab, compases, completo)
+        else:
+            nivel_nota, compas_nota = np.full(len(notas), 0), np.zeros(len(notas), dtype=int)
         frases, iteraciones, firmas = [("COUNT", 0)], [(t_count, 0)], {}
         conjuntos_por_iter = []
         for k in range(len(cortes)):
             idx = [i for i, n in enumerate(notas) if lim[k] - 1e-4 <= n[0] < lim[k + 1] - 1e-4]
-            # versiones distintas de la frase, de más fácil a completa (se quitan las repetidas)
+            # Versiones de la frase de más fácil a completa, como en las canciones oficiales: se empieza con
+            # muy pocas notas y se van añadiendo poco a poco. Cada paso rítmico (compás, medio compás,
+            # tiempo, corchea, semicorchea) se parte en dos: primero entran las notas nuevas de los
+            # compases 1 y 3 de la frase y luego las de los compases 2 y 4 (como hace DDC). Hasta 10 niveles.
             versiones = []
+            c0 = min((compas_nota[i] for i in idx), default=0)
+            pasos = []
             for d in range(len(NIVELES_DD)) if DD_MODO == "propia" else [0]:
-                v = [i for i in idx if nivel_nota[i] <= d]
+                pasos.append(lambda i, d=d: nivel_nota[i] < d or (nivel_nota[i] == d and (compas_nota[i] - c0) % 2 == 0))
+                pasos.append(lambda i, d=d: nivel_nota[i] <= d)
+            for cond in pasos:
+                v = [i for i in idx if cond(i)]
                 if v and (not versiones or v != versiones[-1]):
                     versiones.append(v)
-            if DD_INICIAL > 0 and idx:
-                # dificultad inicial: cinco escalones desde el % pedido hasta la frase completa. Las notas
-                # entran por importancia rítmica (compás, medio compás, tiempo, corchea) y, a igualdad,
-                # las más largas primero
-                orden = sorted(idx, key=lambda i: (nivel_nota[i], -(tab[i][1] - tab[i][0]), i))
-                versiones = []
-                for f in np.linspace(DD_INICIAL / 100, 1.0, len(NIVELES_DD)):
-                    v = sorted(orden[:max(1, int(np.ceil(f * len(idx))))])
-                    if not versiones or v != versiones[-1]:
-                        versiones.append(v)
+            if DD_INICIAL > 0 and versiones:
+                # dificultad inicial: se quitan los niveles con menos notas que el % pedido de la frase
+                minimo = DD_INICIAL / 100 * len(versiones[-1])
+                versiones = [v for v in versiones[:-1] if len(v) >= minimo] + [versiones[-1]]
             if not versiones:
                 versiones = [[]]
             # frases que se repiten (estribillo, estrofa...) comparten nombre y Rocksmith suma su progreso.
@@ -1104,10 +1156,14 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
             pid = None
             for ref, (fid, _) in firmas.items():
                 otra = set(ref)
-                if (not firma and not otra) or (firma and otra and
-                                                len(firma & otra) / max(len(firma), len(otra)) >= 0.75):
-                    pid = fid
-                    break
+                if not firma and not otra:
+                    pid = fid; break
+                if firma and otra:
+                    # misma nota con una semicorchea de margen: la transcripción de dos repeticiones nunca
+                    # sale clavada (una nota que cae en el "y" en una vuelta y en la "a" en la otra)
+                    iguales = sum(1 for s_, p_ in firma if any((s_ + d, p_) in otra for d in (-1, 0, 1)))
+                    if iguales / max(len(firma), len(otra)) >= 0.8:
+                        pid = fid; break
             if pid is None:
                 pid = len(frases)
                 firmas[frozenset(firma)] = (pid, None)
@@ -1390,6 +1446,12 @@ def procesar(ruta, salida, forzar):
         bajo = separar_bajo(mezcla, tmp)
         marca("separar_bajo")
         DIAG["sonoridad"] = sonoridades(mezcla, bajo)
+        dif = DIAG["sonoridad"].get("bajo_respecto_mezcla_db")
+        if dif is not None and dif < -35:
+            # en las canciones normales el bajo separado queda entre 6 y 18 dB por debajo de la mezcla;
+            # a -35 dB o menos lo que se ha separado es ruido: la tablatura saldría inventada
+            raise RuntimeError(f"no parece tener bajo (lo separado está {-dif:.0f} dB por debajo de la mezcla); "
+                               "no genero tablatura")
         log("  [2/6] Detectando beats y compases...")
         beats, act = detectar_beats(mezcla_mono)
         grid, barras, bpm, conf, irregulares = construir_grid(beats, act, duracion)

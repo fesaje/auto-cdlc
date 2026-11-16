@@ -20,15 +20,17 @@ wwise =
 umbral_cents = 30
 
 # Dificultad dinámica (DD), la que va subiendo de nivel según tocas bien:
-#   propia     = niveles por pulso, iguales en toda la canción: 1 nota por compás, por medio compás,
-#                por tiempo, por corchea y completa (recomendada)
+#   propia     = hasta 10 niveles por pulso, como en las canciones oficiales: se empieza con una nota
+#                cada dos compases y se van añadiendo (compás, medio compás, tiempo, corchea, completa;
+#                cada paso primero en los compases impares y luego en todos) (recomendada)
 #   dlcbuilder = la que genera DLC Builder (la de antes)
 #   ninguna    = sin DD: siempre la canción completa, pero Rocksmith no muestra porcentaje
 dificultad = propia
 
 # Dificultad inicial (solo con dificultad = propia): % de notas con el que empieza cada frase.
-#   0  = desde lo más sencillo (una nota por compás)
-#   60 = empieza ya con al menos el 60 % de las notas de cada frase (se quitan los niveles más fáciles)
+#   0  = desde lo más sencillo, como las oficiales (recomendado)
+#   50 = empieza ya con al menos el 50 % de las notas de cada frase (se quitan los niveles más fáciles;
+#        quedan 3 o 4 niveles y se pasa muy rápido a la canción completa)
 dificultad_inicial = 0
 
 # Notas repetidas (La-La-La-La): cortar las notas largas donde el bajo vuelve a pulsar la misma nota.

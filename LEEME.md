@@ -148,6 +148,17 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.5**: DD más parecida a la de las canciones oficiales: hasta 10 niveles por frase, empezando con
+  una nota cada dos compases. Cada paso rítmico entra primero en los compases impares de la frase y luego
+  en todos (como el DDC de la comunidad). Con `dificultad_inicial` se quitan los niveles más fáciles.
+- **2.4.2**: arreglado el corte de notas repetidas de la 2.4, que inventaba notas en los silencios (la
+  cola de una nota apagándose se tomaba por un golpe nuevo; en "Rostro de actriz" eran ~130 notas
+  fantasma, casi todas en las cuerdas Re y Sol). Cuando CREPE y pYIN discrepan en un semitono, gana la
+  nota que está en la tonalidad de la canción (se estima sola).
+- **2.4.1**: Beat This! se ejecuta una sola vez por canción (antes dos: el paso de compases tardaba el
+  doble). Cuando Beat This! cuenta a mitad de tempo también se usa su tiempo 1, y si madmom salta entre
+  tempos se usan sus beats. Las canciones sin bajo (lo separado es casi silencio) se saltan con un aviso
+  en vez de inventar una tablatura. Las frases repetidas se reconocen con una semicorchea de margen.
 - **2.4**: tres motores nuevos. (1) Las notas repetidas (La-La-La-La) que salían como una sola nota
   mantenida se cortan donde el bajo vuelve a pulsar (`partir_repetidas`, `umbral_reataque_db`).
   (2) El tono de cada nota sale de CREPE (`tono_crepe`). (3) El tiempo 1 sale de Beat This! cuando
