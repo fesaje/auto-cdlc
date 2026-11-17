@@ -40,3 +40,15 @@ umbral_reataque_db = 3
 
 # Tono de cada nota con CREPE (red neuronal, más fiable en notas graves que el método anterior).
 tono_crepe = si
+
+# Sonido del bajo en el juego (ampli y pedales).
+#   auto       -> si la canción o el artista tiene DLC oficial de Rocksmith, su tono; si no, limpio
+#                 (y si se detecta púa, el limpio brillante).
+#   limpio     -> limpio redondo, para tocar con dedos
+#   limpio_pua -> limpio brillante (el de Ramones - Blitzkrieg Bop)
+#   saturado   -> overdrive suave (Bon Jovi - It's My Life)
+#   distorsion -> distorsión fuerte (Motörhead - Ace of Spades)
+#   fuzz       -> fuzz (Nirvana - Breed)
+#   o el nombre de cualquier tono oficial, p. ej. RageKilling_bassdist o Hysteria_bass.
+# Se aplica a todas las canciones del lote: cambia esto por disco si hace falta.
+tono_bajo = auto

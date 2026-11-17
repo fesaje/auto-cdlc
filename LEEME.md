@@ -148,6 +148,17 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.7**: sonido del bajo en el juego (ampli y pedales) según la canción. Nueva opción `tono_bajo` en
+  configuracion.txt: `auto` usa el tono oficial de Rocksmith si la canción o el artista tienen DLC oficial (base de
+  1.611 tonos de bajo de DLC Builder, se baja sola la primera vez) y si no, limpio (o limpio brillante con púa).
+  También se puede fijar `limpio`, `limpio_pua`, `saturado`, `distorsion`, `fuzz` o el nombre de un tono oficial.
+  El informe de cada canción dice qué tono lleva. La detección automática de distorsión en el audio aún no se aplica:
+  sus medidas se guardan en el diagnóstico para calibrarla.
+- **2.6**: pulso más estable y más rápido. Los huecos donde el detector de beats se callaba (y salían compases de 6/4 o tempos
+  absurdos) se rellenan, y los beats dobles se quitan. Si madmom salta de tempo y Beat This! cuenta igual, se usan los beats
+  de Beat This!. La red de compases de madmom solo se calcula cuando hace falta (la fase de pulso pasa de ~160 s a ~50 s).
+  Las frases ya no empiezan siempre en el compás 1: se prueba a desplazarlas 0-3 compases y se elige el corte que más
+  repeticiones encuentra (más progreso compartido entre estribillos).
 - **2.5.2**: si las etiquetas traen el álbum, la carátula y el año salen de ESE disco (búsqueda artista +
   álbum) y el nombre del disco es el de tus etiquetas. Solo si no se encuentra se busca por la canción.
 - **2.5.1**: ritmo más fiel: cada nota se coloca desde el pico de su ataque y no desde el inicio

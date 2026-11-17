@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.5.2"
+VERSION = "2.7"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -44,6 +44,7 @@ WWISE = None
 ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
 PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
 UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
+TONO_MODO = "auto"         # tono del bajo en el juego; configuracion.txt: tono_bajo
 TONO_CREPE = True          # tono de cada nota con CREPE (más fiable en graves que pYIN); configuracion.txt: tono_crepe
 DD_INICIAL = 0            # % de notas del nivel más fácil; configuracion.txt: dificultad_inicial
 DD_MODO = "propia"        # propia | dlcbuilder | ninguna; configuracion.txt: dificultad
@@ -310,16 +311,37 @@ def activacion_beat_this(wav_mezcla):
     return np.repeat(act, 2, axis=0), np.asarray(beats)
 
 
+def reparar_beats(beats):
+    """Rellena los beats que faltan y quita los que sobran: un hueco de 2 o 3 beats (tramo flojo donde
+    el detector se calla) se parte en beats iguales, y un beat metido a mitad (doble) se quita. Sin esto,
+    cada hueco se convertía en un compás de 6/4 o en un tempo absurdo."""
+    beats = np.asarray(beats, dtype=float)
+    if len(beats) < 8:
+        return beats, 0, 0
+    out, puestos, quitados = [beats[0]], 0, 0
+    for k in range(1, len(beats)):
+        ibi_loc = np.median(np.diff(beats[max(0, k - 9):k + 8]))
+        g = beats[k] - out[-1]
+        r = g / ibi_loc
+        if r < 0.6 and k + 1 < len(beats):
+            quitados += 1                       # beat de más: se salta
+            continue
+        if 1.6 < r < 4.5:
+            n = int(round(r))
+            out += list(out[-1] + g * np.arange(1, n) / n); puestos += n - 1
+        out.append(beats[k])
+    return np.array(out), puestos, quitados
+
+
 def detectar_beats(wav_mezcla):
-    """Beats con madmom (DBN, tempo limitado a 60-180) y activación de 'tiempo 1'.
-    El tiempo 1 sale de Beat This! cuando cuenta los mismos beats que madmom; si cuenta al doble o a la
-    mitad (pasa en canciones rápidas) o no está disponible, de la red de compases de madmom."""
+    """Beats y activación de 'tiempo 1'. Beats: madmom (DBN, tempo 60-180), o Beat This! cuando madmom
+    salta de tempo. Tiempo 1: Beat This! si cuenta el mismo pulso (o la mitad); si no, la red de compases
+    de madmom (que solo se calcula entonces: es lenta)."""
     from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
-    from madmom.features.downbeats import RNNDownBeatProcessor
     beats = np.asarray(DBNBeatTrackingProcessor(fps=100, min_bpm=BPM_MIN, max_bpm=BPM_MAX)(
         RNNBeatProcessor()(str(wav_mezcla))))
-    act = np.asarray(RNNDownBeatProcessor()(str(wav_mezcla)))
     info = {"motor_tiempo_1": "madmom"}
+    act = None
     try:
         act_bt, beats_bt = activacion_beat_this(wav_mezcla)
     except Exception as ex:
@@ -327,26 +349,32 @@ def detectar_beats(wav_mezcla):
         info["beat_this_error"] = str(ex)[:200]
     if act_bt is not None and len(beats_bt) > 8 and len(beats) > 8:
         r = float(np.median(np.diff(beats_bt)) / np.median(np.diff(beats)))
-        n = min(len(act), len(act_bt))
         info["beat_this_relacion_tempo"] = round(r, 2)
         ibi = np.diff(beats)
         inestable = float(np.mean(np.abs(ibi / np.median(ibi) - 1) > 0.3))
         info["madmom_beats_inestables_pct"] = round(100 * inestable, 1)
         if 0.85 < r < 1.15:
-            act = act_bt[:n].copy(); info["motor_tiempo_1"] = "beat_this"
+            act = act_bt; info["motor_tiempo_1"] = "beat_this"
+            if inestable > 0.05:
+                beats = np.asarray(beats_bt); info["motor_pulso"] = "beat_this (madmom inestable)"
         elif 1.8 < r < 2.2:
             # Beat This! cuenta a la mitad (blancas): sus tiempos 1 siguen cayendo en principios de compás,
-            # así que su activación sirve. Si además madmom salta entre tempos (dobla y desdobla), se usan
-            # los beats de Beat This! partidos por la mitad, que son más estables
-            act = act_bt[:n].copy(); info["motor_tiempo_1"] = "beat_this (a mitad de tempo)"
+            # así que su activación sirve. Si además madmom salta entre tempos, se usan los beats de
+            # Beat This! partidos por la mitad, que son más estables
+            act = act_bt; info["motor_tiempo_1"] = "beat_this (a mitad de tempo)"
             if inestable > 0.05:
                 medios = (beats_bt[:-1] + beats_bt[1:]) / 2
                 beats = np.sort(np.concatenate([beats_bt, medios]))
                 info["motor_pulso"] = "beat_this x2 (madmom inestable)"
         else:
-            # Beat This! cuenta el pulso al doble o a la mitad: su "tiempo 1" marca medios compases (o dos
-            # compases) y confundiría al detector de compases; se queda solo madmom
+            # Beat This! cuenta el pulso al doble: su "tiempo 1" marca medios compases y confundiría al
+            # detector de compases; se usa la red de compases de madmom
             info["motor_tiempo_1"] = "madmom (beat_this a otro tempo)"
+    if act is None:
+        from madmom.features.downbeats import RNNDownBeatProcessor
+        act = np.asarray(RNNDownBeatProcessor()(str(wav_mezcla)))
+    beats, puestos, quitados = reparar_beats(beats)
+    info["beats_rellenados"], info["beats_quitados"] = puestos, quitados
     DIAG["deteccion_pulso"] = info
     return beats, act
 
@@ -851,6 +879,125 @@ TONO_BAJO = {   # tono de bajo limpio (del proyecto de ejemplo de Rocksmith2014.
 }
 
 
+TONOS_PRESET = {   # tonos de bajo de canciones oficiales (de la base de tonos de DLC Builder)
+    "limpio": {"de": "tono limpio de DLC Builder", **{k: TONO_BAJO[k] for k in ("GearList", "ToneDescriptors", "Volume")}},
+    "limpio_pua": {"de": "Ramones - Blitzkrieg Bop", "GearList": {"Amp": {"Type": "Amps", "KnobValues": {"Bass_Amp_HT300B_LoShift": 0, "Bass_Amp_HT300B_Mid": 100, "Bass_Amp_HT300B_MidFreq": 3, "Bass_Amp_HT300B_HiShift": 0, "Bass_Amp_HT300B_Bass": 74, "Bass_Amp_HT300B_Gain": 32, "Bass_Amp_HT300B_Treble": 90}, "Key": "Bass_Amp_HT300B"}, "Cabinet": {"Type": "Cabinets", "KnobValues": {}, "Key": "Bass_Cab_AT810BC_57_Edge"}, "PostPedal1": {"Type": "Pedals", "KnobValues": {"Bass_Pedal_MBComp_Filter": 160, "Bass_Pedal_MBComp_Compress": 41, "Bass_Pedal_MBComp_Rate": 100}, "Key": "Bass_Pedal_MBComp", "Category": "Dynamics"}}, "ToneDescriptors": ["$[35715]BASS"], "Volume": "-20.001999"},
+    "saturado": {"de": "Bon Jovi - It's My Life", "GearList": {"Amp": {"Type": "Amps", "KnobValues": {"Bass_Amp_EdenWT550_Bass": 3.5, "Bass_Amp_EdenWT550_Mid": 1.5, "Bass_Amp_EdenWT550_LoFreq": 205, "Bass_Amp_EdenWT550_HiFreq": 2.6, "Bass_Amp_EdenWT550_Lo": -6, "Bass_Amp_EdenWT550_Hi": -3, "Bass_Amp_EdenWT550_MidFreq": 960, "Bass_Amp_EdenWT550_Treble": 8, "Bass_Amp_EdenWT550_Enhance": 25, "Bass_Amp_EdenWT550_Gain": 14}, "Key": "Bass_Amp_EdenWT550"}, "Cabinet": {"Type": "Cabinets", "KnobValues": {}, "Key": "Bass_Cab_EdenD610XST_Condenser_Edge"}, "PrePedal1": {"Type": "Pedals", "KnobValues": {"Bass_Pedal_BassOverdrive_Blend": 55, "Bass_Pedal_BassOverdrive_Gain": 54, "Bass_Pedal_BassOverdrive_Tone": 46, "Bass_Pedal_BassOverdrive_Filter": 74}, "Key": "Bass_Pedal_BassOverdrive", "Category": "30780"}, "PostPedal1": {"Type": "Pedals", "KnobValues": {"Bass_Pedal_MBComp_Filter": 390, "Bass_Pedal_MBComp_Compress": 48, "Bass_Pedal_MBComp_Rate": 80}, "Key": "Bass_Pedal_MBComp"}}, "ToneDescriptors": ["$[35715]BASS", "$[35716]OVERDRIVE"], "Volume": "-16.000"},
+    "distorsion": {"de": "Motörhead - Ace of Spades", "GearList": {"Rack1": {"Type": "Racks", "KnobValues": {"Rack_StudioEQ_BassFreq": 160, "Rack_StudioEQ_HiMidFreq": 3.6, "Rack_StudioEQ_TrebleFreq": 14.2, "Rack_StudioEQ_LoMidFreq": 140, "Rack_StudioEQ_Treble": -4.5, "Rack_StudioEQ_LoMidQ": 1, "Rack_StudioEQ_Bass": 1, "Rack_StudioEQ_HiMid": 2.5, "Rack_StudioEQ_LoMid": -4.5, "Rack_StudioEQ_HiMidQ": 0}, "Key": "Rack_StudioEQ", "Category": "30785"}, "Amp": {"Type": "Amps", "KnobValues": {"Bass_Amp_HT100B_Pres": 36, "Bass_Amp_HT100B_Bass": 80, "Bass_Amp_HT100B_Mid": 86, "Bass_Amp_HT100B_Treble": 100, "Bass_Amp_HT100B_Gain": 92}, "Key": "Bass_Amp_HT100B"}, "Cabinet": {"Type": "Cabinets", "KnobValues": {}, "Key": "Bass_Cab_GB415BC_57_Edge"}, "PrePedal1": {"Type": "Pedals", "KnobValues": {"Pedal_EQ5_5700": 4, "Pedal_EQ5_2200": 8, "Pedal_EQ5_63": -3, "Pedal_EQ5_250": -6, "Pedal_EQ5_750": 2}, "Key": "Pedal_EQ5", "Category": "30785"}, "PostPedal1": {"Type": "Pedals", "KnobValues": {"Bass_Pedal_MBComp_Filter": 230, "Bass_Pedal_MBComp_Compress": 62, "Bass_Pedal_MBComp_Rate": 24}, "Key": "Bass_Pedal_MBComp", "Category": "30781"}}, "ToneDescriptors": ["$[35715]BASS", "$[35722]DISTORTION"], "Volume": "-20.000"},
+    "fuzz": {"de": "Nirvana - Breed", "GearList": {"Amp": {"Type": "Amps", "KnobValues": {"Bass_Amp_HT300B_LoShift": 0, "Bass_Amp_HT300B_Mid": 98, "Bass_Amp_HT300B_MidFreq": 2, "Bass_Amp_HT300B_HiShift": 1, "Bass_Amp_HT300B_Bass": 91, "Bass_Amp_HT300B_Gain": 8, "Bass_Amp_HT300B_Treble": 72}, "Key": "Bass_Amp_HT300B", "Skin": "urn:image:dds:gear_bass_amp_ht300b_1", "SkinIndex": 1}, "Cabinet": {"Type": "Cabinets", "KnobValues": {}, "Key": "Bass_Cab_AT810BC_Tube_Cone"}, "PrePedal1": {"Type": "Pedals", "KnobValues": {"Bass_Pedal_BassFuzz_Tone": 64, "Bass_Pedal_BassFuzz_Gain": 12, "Bass_Pedal_BassFuzz_Filter": 65}, "Key": "Bass_Pedal_BassFuzz", "Category": "Distortion"}}, "ToneDescriptors": ["$[35715]BASS"], "Volume": "-17.779877"},
+}
+TONOS_DB_URL = "https://github.com/iminashi/tones/raw/main/official.db"
+
+
+def _norm(t):
+    t = a_ascii(str(t)).lower()
+    t = re.sub(r"^the\s+|\s*\(.*?\)|\s*\[.*?\]", "", t)
+    return re.sub(r"[^a-z0-9]+", "", t)
+
+
+def base_tonos():
+    """Base de tonos oficiales de Rocksmith (la misma que descarga DLC Builder). Se baja una vez (8 MB)."""
+    import urllib.request
+    ruta = AQUI / "modelos" / "tonos_oficiales.db"
+    if ruta.exists():
+        return ruta
+    memo = ruta.with_suffix(".fallo")
+    if SIN_INTERNET or (memo.exists() and time.time() - memo.stat().st_mtime < 86400):
+        return None
+    try:
+        ruta.parent.mkdir(exist_ok=True)
+        tmp = ruta.with_suffix(".part")
+        urllib.request.urlretrieve(TONOS_DB_URL, tmp)
+        if tmp.read_bytes()[:15] != b"SQLite format 3":
+            raise RuntimeError("no es una base SQLite")
+        tmp.replace(ruta)
+        return ruta
+    except Exception as ex:
+        memo.write_text(str(ex)[:300])
+        log(f"  Aviso: no se pudo bajar la base de tonos oficiales ({ex}); se usa el tono elegido en la configuración")
+        return None
+
+
+def tono_oficial(artista=None, titulo=None, nombre=None):
+    """Busca un tono de bajo oficial: por nombre exacto, o por canción, o por artista.
+    Devuelve (definición, descripción) o (None, None)."""
+    import json, sqlite3
+    db = base_tonos()
+    if db is None:
+        return None, None
+    con = sqlite3.connect(str(db))
+    filas = con.execute("SELECT artist, title, name, description, definition FROM tones WHERE basstone = 1").fetchall()
+    con.close()
+    if nombre:
+        cand = [f for f in filas if f[2].lower() == nombre.lower()]
+        tipo = "por nombre"
+    else:
+        a = _norm(artista)
+        delart = [f for f in filas if _norm(f[0]) == a] if a else []
+        cand = [f for f in delart if _norm(f[1]) == _norm(titulo)]
+        tipo = "de la misma canción"
+        if not cand:
+            cand, tipo = delart, "del mismo artista"
+    if not cand:
+        return None, None
+    # el tono principal: el que solo es "Bass" (sin efecto especial), si lo hay
+    cand.sort(key=lambda f: (f[3] != "Bass", "_bass" not in f[2].lower(), f[1], f[2]))
+    ar, ti, nom, desc, d = cand[0]
+    return json.loads(d), f"oficial {tipo}: {ar} - {ti} ({nom})"
+
+
+def rasgos_saturacion(bajo_wav):
+    """Medidas del stem de bajo para estimar si va saturado. EXPERIMENTAL: el separador se queda con poco
+    de los armónicos de la distorsión, así que solo se apuntan en el diagnóstico (para calibrar)."""
+    import librosa
+    y, sr = librosa.load(str(bajo_wav), sr=22050, mono=True)
+    S = np.abs(librosa.stft(y, n_fft=4096, hop_length=512)) ** 2
+    f = librosa.fft_frequencies(sr=sr, n_fft=4096)
+    rdb = 10 * np.log10(S.sum(0) + 1e-12)
+    act = rdb > rdb.max() - 25
+    if act.sum() < 20:
+        return {}
+    banda = lambda lo, hi: S[(f >= lo) & (f < hi)][:, act].sum(0) + 1e-12
+    lo = banda(40, 300)
+    blk = int(0.05 * sr); nb = len(y) // blk
+    yb = y[:nb * blk].reshape(nb, blk)
+    rb = np.sqrt((yb ** 2).mean(1)); pk = np.abs(yb).max(1)
+    m = rb > rb.max() * 0.06
+    return {"agudos_vs_graves_db": round(float(np.median(10 * np.log10(banda(800, 5000) / lo))), 1),
+            "medios_vs_graves_db": round(float(np.median(10 * np.log10(banda(300, 800) / lo))), 1),
+            "cresta_db": round(float(np.median(20 * np.log10(pk[m] / rb[m]))), 2)}
+
+
+def elegir_tono(artista, titulo, pua, bajo_wav):
+    """Tono del bajo en el juego. tono_bajo = auto: si la canción o el artista tiene DLC oficial, su tono;
+    si no, limpio (con púa: el de los Ramones, más brillante). También se puede fijar un tipo
+    (limpio, limpio_pua, saturado, distorsion, fuzz) o el nombre de un tono oficial (p. ej. MotoAce_bass)."""
+    info = {"pedido": TONO_MODO}
+    try:
+        info["rasgos"] = rasgos_saturacion(bajo_wav)
+    except Exception as ex:
+        info["rasgos_error"] = str(ex)[:200]
+    tono, origen = None, None
+    modo = TONO_MODO.strip()
+    if modo.lower() in TONOS_PRESET:
+        p = TONOS_PRESET[modo.lower()]; tono, origen = p, f"{modo.lower()} ({p['de']})"
+    elif modo.lower() != "auto":
+        tono, origen = tono_oficial(nombre=modo)
+        if tono is None:
+            log(f"  Aviso: no encuentro el tono '{modo}'; uso el automático")
+    if tono is None:
+        tono, origen = tono_oficial(artista, titulo)
+    if tono is None:
+        clave = "limpio_pua" if pua else "limpio"
+        tono, origen = TONOS_PRESET[clave], f"{clave} ({TONOS_PRESET[clave]['de']})"
+    info["elegido"] = origen
+    DIAG["tono"] = info
+    gear = {k: v for k, v in tono["GearList"].items() if v}
+    return {"GearList": gear, "ToneDescriptors": tono.get("ToneDescriptors") or ["$[35715]BASS"],
+            "NameSeparator": " - ", "IsCustom": True, "Volume": str(tono.get("Volume", "-20")),
+            "Key": "bass", "Name": "bass"}, origen
+
+
 def volumen_rocksmith(ruta):
     """Igual que el volumen automático de DLC Builder: -16 - sonoridad integrada (LUFS)."""
     import soundfile as sf, pyloudnorm
@@ -1178,7 +1325,33 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
         # frases de 4 compases (8 si la canción es muy larga; Rocksmith admite 100)
         compases_musica = [b for b, _ in compases[1:] if beats[b] < t_end - 0.05]
         paso = 4 if len(compases_musica) / 4 <= 96 else 8
-        bloques = compases_musica[::paso]
+
+        def firmas_de(bl):
+            lim_ = [beats[x] for x in bl] + [t_end]
+            out = []
+            for k in range(len(bl)):
+                s0 = (bl[k] - 4) * 4
+                out.append({(int(n[0] - s0), int(n[2])) for n, nt in zip(tab, notas)
+                            if lim_[k] - 1e-4 <= nt[0] < lim_[k + 1] - 1e-4})
+            return out
+
+        def distintas(fs):
+            reps = []
+            for f in fs:
+                if not any((not f and not g) or (f and g and sum(1 for a_, b_ in f if any((a_ + d, b_) in g for d in (-1, 0, 1)))
+                                                 / max(len(f), len(g)) >= 0.8) for g in reps):
+                    reps.append(f)
+            return len(reps)
+
+        # Las estrofas no siempre empiezan en el compás 1, 5, 9...: se prueba a desplazar el corte de las
+        # frases 0-3 compases y se queda el que más repeticiones encuentra (más progreso compartido)
+        opciones = []
+        for o in range(paso):
+            bl = compases_musica[::paso] if o == 0 else [compases_musica[0]] + compases_musica[o::paso]
+            fs = firmas_de(bl)
+            opciones.append((distintas(fs) / max(len(fs), 1), o, bl))
+        _, desplazamiento, bloques = min(opciones, key=lambda x: (x[0], x[1]))
+        DIAG.setdefault("frases", {})["desplazamiento_compases"] = desplazamiento
         cortes = [beats[b] for b in bloques]
         cortes[0] = t_musica
         lim = cortes + [t_end]
@@ -1328,7 +1501,7 @@ def tempo_medio_aprox(beats, t):
     return 60.0 / max(beats[i] - beats[i - 1], 1e-3)
 
 
-def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua):
+def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua, tono=None):
     import json, uuid, zlib
     clave = "cb" + (StringValidator_dlckey(a_ascii(meta["artista"]))[:5] + StringValidator_dlckey(a_ascii(meta["titulo"]))[:5])
     if len(clave) < 5:
@@ -1359,7 +1532,7 @@ def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cu
                 "PersistentID": str(uuid.UUID(int=(semilla << 96) | (semilla << 32) | 0xC0FFEE)),
             }],
         }],
-        "Tones": [TONO_BAJO],
+        "Tones": [tono or TONO_BAJO],
     }
     Path(ruta).write_text(json.dumps(proyecto, ensure_ascii=False, indent=2), encoding="utf-8")
     return proyecto
@@ -1579,9 +1752,11 @@ def procesar(ruta, salida, forzar):
                                    pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, meta, duracion_ogg)
         inicio_prev = escribir_preview(dest / f"{nombre}.ogg", dest / f"{nombre}_preview.ogg", duracion_ogg)
         portada, origen_portada = crear_portada(ruta, dest / "portada.png", artista, titulo, caratula)
+        tono, origen_tono = elegir_tono(meta["artista"], meta["titulo"],
+                                        pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, bajo)
         escribir_proyecto(dest / f"{nombre}.rs2dlc", meta, xml_path, dest / f"{nombre}.ogg",
                           dest / f"{nombre}_preview.ogg", inicio_prev, portada, cuerdas, cents_aplicado,
-                          pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False)
+                          pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, tono)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
         marca("escribir_archivos")
         psarcs, error_psarc = [], "desactivada (--sin-psarc)"
@@ -1660,7 +1835,7 @@ def procesar(ruta, salida, forzar):
     txt_portada = (f"PORTADA: {origen_portada}" + (f" | álbum: {meta['album']}" if meta['album'] else "")
                    + f" | año: {meta['year']}\n")
     informe = (f"Canción: {artista} - {titulo}  (nombre tomado de {fuente})\nArchivo: {ruta.name}\n\n" + txt_psarc + txt_proyecto + txt_portada + "\n"
-               + txt_afin + txt_cents + txt_pua + "\n"
+               + txt_afin + txt_cents + txt_pua + f"TONO DEL BAJO EN EL JUEGO: {origen_tono}\n" + "\n"
                f"Tempo mediano: {bpm:.1f} BPM | confianza del tiempo 1: {conf*100:.0f}%\n"
                f"Ataques detectados: {n_ataques} | notas: {len(notas)} (resueltas por CQT: {n_cqt}) | "
                f"en la tablatura: {n_gp}\n"
@@ -1770,7 +1945,7 @@ class Registro:
             self.cabecera += (f"Configuración: psarc={'si' if COMPILAR else 'no'} | carpeta={CARPETA_PSARC} | "
                               f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} (inicial {DD_INICIAL:.0f} %) | "
                               f"wwise={WWISE or 'automático'} | partir_repetidas={'si' if PARTIR_REPETIDAS else 'no'} "
-                              f"({UMBRAL_REATAQUE_DB} dB) | tono_crepe={'si' if TONO_CREPE else 'no'}\n")
+                              f"({UMBRAL_REATAQUE_DB} dB) | tono_crepe={'si' if TONO_CREPE else 'no'} | tono_bajo={TONO_MODO}\n")
         except Exception:
             pass
         self._guardar()
@@ -1816,11 +1991,12 @@ def main():
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     a = ap.parse_args()
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
-    global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE
+    global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO
     conf = leer_configuracion()
     no = ("no", "false", "0")
     PARTIR_REPETIDAS = conf.get("partir_repetidas", "si").lower() not in no
     TONO_CREPE = conf.get("tono_crepe", "si").lower() not in no
+    TONO_MODO = conf.get("tono_bajo", "auto").strip() or "auto"
     try:
         UMBRAL_REATAQUE_DB = float(conf.get("umbral_reataque_db", UMBRAL_REATAQUE_DB))
     except ValueError:
