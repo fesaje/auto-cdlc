@@ -1,89 +1,92 @@
 # auto-cdlc
 
-**De mp3 a CDLC de bajo para Rocksmith 2014, en tu PC y gratis.**
+**English** | [Español](README.es.md)
 
-Metes tus canciones en una carpeta, ejecutas un `.bat` y sales con archivos `.psarc` listos para tocar
-el bajo en Rocksmith 2014 Remastered. Para cada canción se generan:
+**Turn your mp3s into bass CDLC for Rocksmith 2014: on your own PC, for free.**
 
-- la tablatura de bajo,
-- la dificultad dinámica,
-- el tono del ampli,
-- la carátula,
-- la letra en pantalla (si está disponible),
-- un segundo arreglo simplificado.
+Put your songs in a folder, run a `.bat` file and get `.psarc` files ready to play bass in Rocksmith 2014
+Remastered. For each song you get:
 
-Todo se calcula en local con modelos de código abierto: sin cuentas, sin pagar por canción y sin subir tu
-música a ningún sitio.
+- the bass tab,
+- dynamic difficulty,
+- the amp tone,
+- the album art,
+- on-screen lyrics (when available),
+- a second, simplified arrangement.
 
-> *English summary: auto-cdlc turns your own audio files into bass custom songs (CDLC) for Rocksmith 2014,
-> fully offline and free: bass stem separation, beat/downbeat tracking, note transcription, fingering,
-> dynamic difficulty, tones, lyrics and .psarc packaging. Windows only. Docs are in Spanish.*
+Everything runs locally with open-source models: no accounts, no per-song fees and your music is never
+uploaded anywhere.
+
+> **Note:** the program itself (prompts, reports and `configuracion.txt`) is in Spanish. This guide
+> explains everything you need to use it.
 
 ---
 
-## Qué hace
+## What it does
 
-| Paso | Cómo |
+| Step | How |
 |---|---|
-| Separa el bajo del resto de la mezcla | Modelo MDX *kuielab_b_bass* (audio-separator) |
-| Encuentra el pulso, el tiempo 1 y el compás (4/4, 3/4, 6/8 y compases sueltos) | madmom + Beat This! |
-| Transcribe las notas, también las repetidas | librosa + pYIN + CREPE |
-| Elige la afinación (E, Eb, Drop D, D… hasta B) y la digitación | programación dinámica que minimiza el movimiento de la mano |
-| Dificultad dinámica parecida a la de las canciones oficiales | hasta 10 niveles por frase; las frases repetidas comparten progreso |
-| Tono del bajo | el oficial si la canción o el artista tienen DLC; si no, el que elijas por disco |
-| Letra en pantalla | LRCLIB, si hay una versión con la misma duración |
-| Segundo arreglo simplificado ("Alt. Bass") | una nota por tiempo, por compás… a elegir |
-| Carátula, álbum y año | etiquetas del mp3, iTunes o Deezer |
-| Compila el `.psarc` sin abrir DLC Builder | `cdlc-pack`, hecho con las librerías de DLC Builder |
+| Separates the bass from the rest of the mix | MDX model *kuielab_b_bass* (audio-separator) |
+| Finds the beat, the downbeat and the time signature (4/4, 3/4, 6/8 and odd bars) | madmom + Beat This! |
+| Transcribes the notes, including repeated ones | librosa + pYIN + CREPE |
+| Picks the tuning (E, Eb, Drop D, D… down to B) and the fingering | dynamic programming that minimises hand movement |
+| Dynamic difficulty similar to official songs | up to 10 levels per phrase; repeated phrases share progress |
+| Bass tone | the official one if the song or the artist has official DLC; otherwise the one you choose per album |
+| On-screen lyrics | LRCLIB, if there is a version with the same length |
+| Second, simplified arrangement ("Alt. Bass") | one note per beat, per bar… your choice |
+| Album art, album and year | mp3 tags, iTunes or Deezer |
+| Builds the `.psarc` without opening DLC Builder | `cdlc-pack`, built on DLC Builder's libraries |
 
-Funciona por lotes: antes de empezar agrupa lo pendiente por artista y disco. Te pregunta lo justo
-(dificultad inicial, tono y púa de cada disco) y procesa la noche entera sin vigilancia. Tarda unos
-4–5 minutos por canción en un PC normal.
+It works in batches. Before starting, it groups what's pending by artist and album and asks only what it
+needs (starting difficulty, tone and pick for each album). Then it processes the whole batch unattended,
+overnight if you like. It takes about 4–5 minutes per song on a regular PC.
 
-## Empezar
+## Getting started
 
-1. Instala **Wwise** (convierte el audio al formato de Rocksmith) y el **CDLC Enabler** (para que el
-   juego cargue canciones propias).
-2. Descarga el zip de la [última versión](https://github.com/fesaje/auto-cdlc/releases/latest),
-   descomprímelo y ejecuta **`instalar.bat`**.
-3. Mete tus mp3 en `entrada` y ejecuta **`procesar.bat`**.
+1. Install **Wwise** (converts audio to Rocksmith's format) and the **CDLC Enabler** (lets the game load
+   custom songs).
+2. Download the zip from the [latest release](https://github.com/fesaje/auto-cdlc/releases/latest),
+   unzip it and run **`instalar.bat`**.
+3. Put your mp3s in `entrada` and run **`procesar.bat`**.
 
-Paso a paso en **[docs/instalacion.md](docs/instalacion.md)**.
+Step by step in **[docs/en/installation.md](docs/en/installation.md)**.
 
-## Documentación
+## Documentation
 
-- **[Instalación](docs/instalacion.md)**: requisitos, Wwise, CDLC Enabler, instalador y primera prueba.
-- **[Uso](docs/uso.md)**: cómo procesar canciones, las preguntas de cada tanda, qué sale, todas las
-  opciones de `configuracion.txt`, cómo revisar el resultado y cómo tocarlo en Rocksmith.
-- **[Cómo funciona](docs/funcionamiento.md)**: el proceso por dentro, para curiosos y para quien quiera
-  colaborar.
-- **[Historial de cambios](CHANGELOG.md)**.
-- **[Software de terceros y licencias](TERCEROS.md)**.
+- **[Installation](docs/en/installation.md)**: requirements, Wwise, CDLC Enabler, installer and first
+  test.
+- **[Usage](docs/en/usage.md)**: processing songs, the questions asked for each batch, the output, every
+  option in `configuracion.txt`, checking the result and playing it in Rocksmith.
+- **[How it works](docs/en/how-it-works.md)**: the pipeline in detail, for the curious and for
+  contributors.
+- **[Changelog](CHANGELOG.md)**.
+- **[Third-party software and licences](THIRD_PARTY.md)**.
 
-## Limitaciones
+## Limitations
 
-- Solo **Windows** (10/11, 64 bits) y bajo de **4 cuerdas**.
-- La transcripción es automática. Ritmo y notas suelen salir bien, pero puede haber notas de más o de
-  menos, sobre todo si el bajo suena poco en la mezcla.
-- No detecta técnicas: slides, ligados, slap y armónicos salen como notas normales.
-- No detecta si el bajo va distorsionado: el tono se elige por disco o sale del DLC oficial.
+- **Windows** only (10/11, 64-bit) and **4-string** bass only.
+- Transcription is automatic. Rhythm and notes are usually right, but there may be extra or missing
+  notes, especially when the bass is quiet in the mix.
+- Techniques are not detected: slides, hammer-ons, slap and harmonics come out as plain notes.
+- It cannot tell whether the bass is distorted: the tone is chosen per album or taken from official DLC.
 
-## Aviso legal
+## Legal notice
 
-auto-cdlc no incluye ni descarga música. Está pensado para que hagas CDLC **de uso personal** a partir de
-canciones que ya tienes. No compartas CDLC de canciones protegidas sin permiso, y menos de canciones que
-existen como DLC oficial.
+auto-cdlc does not include or download any music. It is meant for making CDLC **for personal use** from
+songs you already own. Do not share CDLC of copyrighted songs without permission, especially songs that
+exist as official DLC.
 
-Rocksmith es una marca de Ubisoft. Este proyecto no está afiliado a Ubisoft ni a CustomsForge.
+Rocksmith is a trademark of Ubisoft. This project is not affiliated with Ubisoft or CustomsForge.
 
-Los modelos de madmom tienen licencia CC BY-NC-SA: el conjunto solo puede usarse **sin fines
-comerciales**. Detalles en [TERCEROS.md](TERCEROS.md).
+madmom's models are licensed CC BY-NC-SA, so the program as a whole may only be used
+**non-commercially**. Details in [THIRD_PARTY.md](THIRD_PARTY.md).
 
-## Licencia
+## Licence
 
-Código bajo licencia [MIT](LICENSE). El software de terceros mantiene sus propias licencias.
+Code under the [MIT](LICENSE) licence. Third-party software keeps its own licences.
 
-## Colaborar
+## Contributing
 
-Si algo falla, abre una [incidencia](https://github.com/fesaje/auto-cdlc/issues) y adjunta el
-**registro de la tanda** (`salida\registro_….txt`), que trae el diagnóstico completo de cada canción.
+If something fails, open an [issue](https://github.com/fesaje/auto-cdlc/issues) and attach the **batch
+log** (`salida\registro_….txt`), which includes the full diagnostics for every song. Issues in English or
+Spanish are welcome.

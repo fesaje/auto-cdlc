@@ -1,5 +1,7 @@
 # Software de terceros
 
+[English](THIRD_PARTY.md) | **Español**
+
 auto-cdlc se apoya en mucho trabajo ajeno. Ninguno de estos proyectos está afiliado a auto-cdlc. Cada uno
 mantiene su licencia: consulta su repositorio para el texto completo.
 

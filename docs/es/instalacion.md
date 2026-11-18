@@ -1,5 +1,7 @@
 # Instalación
 
+[English](../en/installation.md) | **Español**
+
 Se hace una sola vez y lleva unos 15 minutos, casi todo descargas.
 
 ## Requisitos

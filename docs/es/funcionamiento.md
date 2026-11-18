@@ -1,5 +1,7 @@
 # Cómo funciona por dentro
 
+[English](../en/how-it-works.md) | **Español**
+
 Todo el proceso está en `cdlc_bajo.py`. Las cifras de este documento son las de la versión 0.3.
 
 ## 1. Preparación de la tanda

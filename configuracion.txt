@@ -1,4 +1,4 @@
-# Configuración de auto-cdlc. Las líneas que empiezan por # no cuentan. Guía completa: docs/uso.md
+# Configuración de auto-cdlc. Las líneas que empiezan por # no cuentan. Guía completa: docs/es/uso.md
 
 # Carpeta donde se dejan los .psarc. Si pones la carpeta dlc de Rocksmith, aparecen directamente en el juego.
 # Ejemplo: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc

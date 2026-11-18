@@ -1,5 +1,7 @@
 # Uso
 
+[English](../en/usage.md) | **Español**
+
 ## Procesar canciones
 
 - **Por lotes:** mete las canciones (mp3, flac, wav, ogg, m4a…) en la carpeta **`entrada`** y haz doble
