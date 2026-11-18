@@ -68,3 +68,8 @@ arreglo_simple = tiempo
 # Letra en pantalla mientras tocas, si está en LRCLIB (base libre de letras sincronizadas).
 # Va sincronizada por líneas: dentro de cada línea las palabras van repartidas, no clavadas.
 letra = si
+
+# Antes de empezar se pregunta la dificultad inicial y el arreglo simplificado de la tanda, y el tono y
+# la púa de cada disco (Intro = lo de aquí, o lo que elegiste la última vez para ese disco).
+# Si nadie contesta en estos segundos, se usan los valores por defecto y la tanda arranca sola.
+espera_preguntas = 60

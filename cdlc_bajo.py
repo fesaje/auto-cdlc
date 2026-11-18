@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.8.1"
+VERSION = "2.9"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -82,6 +82,7 @@ AFINACIONES = [
 # Índice de púa (contraste agudo ataque/sostenido, dB). Umbral calibrado con canciones conocidas:
 # con púa 'Qué puedo hacer' 10.3 y 'Un buen día' 7.1 (Los Planetas); con dedos 'Me agarraste' 6.3 (Quique González).
 PUA_UMBRAL_DB = 7.0
+PUA_FORZADA = None         # None = detectar; True/False = fijado para el disco en las preguntas
 PUA_MARGEN_DB = 1.0       # a menos de 1 dB del umbral se avisa de que conviene comprobarlo de oído
 SPM = 16                   # semicorcheas por compás (4/4)
 MARGEN_INICIAL = 0.5       # s de silencio antes del compás COUNT
@@ -692,6 +693,13 @@ def transcribir(bajo_wav, semicorchea=None):
         "rango_dinamico_db": round(float(pico - np.percentile(rms_db, 10)), 1),
     }
     return y, notas, len(ataques), n_cqt, cents, indice_pua(y), pitches_pyin
+
+
+def es_pua(indice):
+    """¿Se marca el arreglo como tocado con púa? Lo fijado para el disco manda sobre la detección."""
+    if PUA_FORZADA is not None:
+        return bool(PUA_FORZADA)
+    return bool(not np.isnan(indice) and indice >= PUA_UMBRAL_DB)
 
 
 def indice_pua(y):
@@ -1907,8 +1915,8 @@ def procesar(ruta, salida, forzar):
         # Tuning Pitch: sólo si el desvío es grande (si no, 440 para no reafinar en cada canción)
         cents_aplicado = cents if abs(cents) >= UMBRAL_CENTS else 0.0
         info_xml = escribir_xml_rs(xml_path, completo, compases, tab, cuerdas, cents_aplicado,
-                                   pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, meta, duracion_ogg)
-        con_pua = bool(pua >= PUA_UMBRAL_DB) if not np.isnan(pua) else False
+                                   es_pua(pua), meta, duracion_ogg)
+        con_pua = es_pua(pua)
         if VELOCIDAD_AUTO:
             # proporcional al tempo: a 120 BPM la base; a 60 la mitad, a 180 vez y media (con límites para
             # que una canción lentísima no se arrastre ni una rapidísima pase volando)
@@ -1954,10 +1962,10 @@ def procesar(ruta, salida, forzar):
         inicio_prev = escribir_preview(dest / f"{nombre}.ogg", dest / f"{nombre}_preview.ogg", duracion_ogg)
         portada, origen_portada = crear_portada(ruta, dest / "portada.png", artista, titulo, caratula)
         tono, origen_tono = elegir_tono(meta["artista"], meta["titulo"],
-                                        pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, bajo)
+                                        es_pua(pua), bajo)
         escribir_proyecto(dest / f"{nombre}.rs2dlc", meta, xml_path, dest / f"{nombre}.ogg",
                           dest / f"{nombre}_preview.ogg", inicio_prev, portada, cuerdas, cents_aplicado,
-                          pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, tono,
+                          es_pua(pua), tono,
                           xml_simple=xml_simple, xml_letra=xml_letra, velocidad=velocidad)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
         marca("escribir_archivos")
@@ -2024,7 +2032,9 @@ def procesar(ruta, salida, forzar):
         veredicto = "probablemente con dedos"
     if not np.isnan(pua) and abs(pua - PUA_UMBRAL_DB) < PUA_MARGEN_DB:
         veredicto += " (cerca del umbral: compruébalo de oído)"
-    con_pua = veredicto.startswith("PROB")
+    if PUA_FORZADA is not None:
+        veredicto = ("CON PÚA" if PUA_FORZADA else "con dedos") + " (fijado para el disco; la detección decía: " + veredicto + ")"
+    con_pua = es_pua(pua)
     txt_pua = (f"PÚA O DEDOS: {veredicto}  [índice {pua:.1f} dB; púa a partir de {PUA_UMBRAL_DB:.0f}]\n"
                + ("  -> Ya va marcado 'Picked' en el proyecto.\n" if con_pua else
                   "  -> Si en realidad es con púa, marca 'Picked' en la ficha del arreglo en DLC Builder.\n"))
@@ -2056,7 +2066,7 @@ def procesar(ruta, salida, forzar):
     # diagnóstico completo (para depurar): diagnostico.json en la carpeta y en el registro general
     DIAG["tablatura"] = resumen_tablatura(tab, compases, info_xml)
     DIAG["resultado"] = {"afinacion": afin_nombre, "cents_aplicados": round(cents_aplicado, 1),
-                         "pua": bool(not np.isnan(pua) and pua >= PUA_UMBRAL_DB), "indice_pua": round(float(pua), 2),
+                         "pua": es_pua(pua), "pua_fijada": PUA_FORZADA, "indice_pua": round(float(pua), 2),
                          "tempo": round(bpm, 1), "silencio_inicial_s": round(pad, 3), "portada": origen_portada,
                          "album": meta["album"], "año": meta["year"], "problemas_proyecto": problemas,
                          "psarc": [Path(x).name for x in psarcs], "error_psarc": None if psarcs else error_psarc,
@@ -2066,7 +2076,7 @@ def procesar(ruta, salida, forzar):
     (dest / "diagnostico.json").write_text(json.dumps(DIAG, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     aviso = "  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics" if conf < 0.6 else ""
     extra = f" | {afin_nombre}" + (" | compás 3/4" if metro == 3 else "") + (f" | Tuning Pitch {cents_aplicado:+.0f} cents" if cents_aplicado else "") + \
-            (" | púa" if veredicto.startswith("PROB") else "") + \
+            (" | púa" if es_pua(pua) else "") + \
             (f" | {len(irregulares)} compases irregulares" if irregulares else "")
     if problemas:
         aviso += "  ¡OJO! el proyecto tiene problemas, mira el informe"
@@ -2184,6 +2194,212 @@ class Registro:
         self.ruta.write_text(texto, encoding="utf-8")
 
 
+# ---------------- preparación de la tanda: pendientes, discos y preguntas ----------------
+def leer_con_espera(segundos):
+    """Lee una línea del teclado; None si nadie escribe nada en 'segundos' (o no hay teclado)."""
+    import sys
+    if not sys.stdin or not sys.stdin.isatty():
+        return None
+    if os.name == "nt":
+        import msvcrt
+        fin, texto = time.time() + segundos, ""
+        while True:
+            if msvcrt.kbhit():
+                ch = msvcrt.getwche()
+                if ch in ("\r", "\n"):
+                    print(); return texto
+                if ch == "\b":
+                    texto = texto[:-1]; print(" \b", end="", flush=True)
+                elif ch in ("\x00", "\xe0"):
+                    msvcrt.getwch()             # tecla especial (flechas...): se ignora
+                else:
+                    texto += ch
+                fin = time.time() + segundos     # mientras escribes no corre el reloj
+            elif time.time() > fin:
+                return texto if texto else None
+            else:
+                time.sleep(0.05)
+    import select
+    r, _, _ = select.select([sys.stdin], [], [], segundos)
+    return sys.stdin.readline().rstrip("\n") if r else None
+
+
+class Preguntas:
+    """Preguntas antes de la tanda. Intro = el valor por defecto. Si nadie contesta en 'espera' segundos
+    (lanzada por la noche y te has ido), se usan los valores por defecto en esta y en todas las demás."""
+    def __init__(self, espera=60, activas=True):
+        import sys
+        self.espera, self.desatendido = espera, not activas
+        if activas and not (sys.stdin and sys.stdin.isatty()):
+            log("(sin teclado: no pregunto, uso los valores por defecto)")
+            self.desatendido = True
+
+    def __call__(self, texto, defecto, valido=lambda v: True):
+        if self.desatendido:
+            log(f"{texto} [{defecto}]: {defecto}")
+            return defecto
+        for _ in range(3):
+            print(f"{texto} [{defecto}]: ", end="", flush=True)
+            r = leer_con_espera(self.espera)
+            if r is None:
+                print(f"\n  (nadie contesta en {self.espera} s: uso los valores por defecto para todo)")
+                self.desatendido = True
+                return defecto
+            r = r.strip() or str(defecto)
+            if valido(r):
+                return r
+            print("  No entiendo esa respuesta, prueba otra vez.")
+        return defecto
+
+
+def _num_pista(t):
+    m = re.match(r"\s*(\d+)", str(t or ""))
+    return int(m.group(1)) if m else 999
+
+
+def disco_de(ruta):
+    """(artista del disco, disco, de dónde sale) para agrupar. Etiquetas si las hay; si no, se pregunta a
+    iTunes/Deezer por la canción; si tampoco, '(sin disco)'."""
+    et = leer_etiquetas(ruta)
+    artista, titulo, _, _ = metadatos(ruta)
+    art = et.get("albumartist") if _etiqueta_valida(et.get("albumartist", "")) else artista
+    album = et.get("album") if _etiqueta_valida(et.get("album", "")) else None
+    if album:
+        return art, album, "etiquetas", _num_pista(et.get("tracknumber"))
+    if not SIN_INTERNET:
+        try:
+            c = buscar_caratula(artista, titulo)
+            if c and c.get("album"):
+                return art, c["album"], "consulta en internet", 999
+        except Exception:
+            pass
+    return art, "(sin disco)", "sin datos", 999
+
+
+def historial(salida):
+    """De los registros anteriores: segundos medios por canción y archivos que dieron error."""
+    tiempos, fallidas = [], set()
+    for reg in sorted(Path(salida).glob("registro_*.txt")):
+        try:
+            for l in reg.read_text(encoding="utf-8", errors="replace").splitlines():
+                m = re.match(r"\[\d+/\d+\] (.+?) \| (OK|ERROR) \| (\d+) s", l)
+                if m:
+                    if m.group(2) == "OK":
+                        tiempos.append(int(m.group(3))); fallidas.discard(m.group(1))
+                    else:
+                        fallidas.add(m.group(1))
+        except Exception:
+            pass
+    medio = float(np.median(tiempos[-200:])) if len(tiempos) >= 5 else None
+    return medio, fallidas
+
+
+def tono_valido(v):
+    v = v.strip()
+    return v.lower() in TONOS_PRESET or v.lower() == "auto" or tono_oficial(nombre=v)[0] is not None \
+        or base_tonos() is None
+
+
+def planificar(archivos, salida, forzar, preguntar):
+    """Pendientes agrupados por artista > disco, preguntas de la tanda y de cada disco, y resumen.
+    Devuelve la lista [(archivo, ajustes del disco)] en orden, o None si se cancela."""
+    import json
+    global DD_INICIAL, ARREGLO_SIMPLE
+    pendientes, hechas = [], 0
+    for r in archivos:
+        nombre, dest = destino(r, salida)[:2]
+        if (dest / f"{nombre}.gp5").exists() and not forzar:
+            hechas += 1
+        else:
+            pendientes.append(r)
+    seg_cancion, fallidas = historial(salida)
+    log(f"\nEn la entrada hay {len(archivos)} canciones: {hechas} ya procesadas, {len(pendientes)} pendientes.")
+    if not pendientes:
+        return []
+    log("Agrupando por disco...")
+    discos = {}
+    for r in pendientes:
+        art, alb, origen, pista = disco_de(r)
+        discos.setdefault((art, alb), {"origen": origen, "canciones": []})["canciones"].append((pista, r.name, r))
+    orden = sorted(discos, key=lambda k: (a_ascii(k[0]).lower(), k[1] == "(sin disco)", a_ascii(k[1]).lower()))
+    for k in orden:
+        discos[k]["canciones"].sort(key=lambda x: (x[0], x[1].lower()))
+    log("")
+    for art, alb in orden:
+        d = discos[(art, alb)]
+        nota = "" if d["origen"] == "etiquetas" else f"  (disco sacado de: {d['origen']})"
+        n = len(d['canciones'])
+        log(f"  {art} > {alb}: {n} {'canción' if n == 1 else 'canciones'}{nota}")
+
+    # ---- preguntas de la tanda ----
+    log("\nPulsa Intro para dejar lo que hay entre corchetes (lo de configuracion.txt).")
+    v = preguntar("Dificultad inicial para toda la tanda (% de notas con que empieza cada frase, 0-95)",
+                  f"{DD_INICIAL:.0f}", lambda x: x.replace("%", "").strip().replace(",", ".").replace(".", "", 1).isdigit()
+                  and 0 <= float(x.replace("%", "").replace(",", ".")) <= 95)
+    DD_INICIAL = float(str(v).replace("%", "").replace(",", ".").strip())
+    claves_simple = {"tiempo": 2, "medio": 1, "compas": 0, "compás": 0, "corchea": 3, "no": None}
+    actual = {2: "tiempo", 1: "medio", 0: "compas", 3: "corchea", None: "no"}[ARREGLO_SIMPLE]
+    v = preguntar("Arreglo simplificado (tiempo / medio / compas / corchea / no)", actual,
+                  lambda x: x.lower() in claves_simple)
+    ARREGLO_SIMPLE = claves_simple[str(v).lower()]
+    reintentar = True
+    fallaron = [r for r in pendientes if r.name in fallidas]
+    if fallaron:
+        log(f"\n{len(fallaron)} de las pendientes dieron error en tandas anteriores (p. ej. sin bajo):")
+        for r in fallaron[:8]:
+            log(f"   - {r.name}")
+        if len(fallaron) > 8:
+            log(f"   ... y {len(fallaron) - 8} más")
+        reintentar = str(preguntar("¿Reintentarlas? (s/n)", "n", lambda x: x.lower()[:1] in "sn")).lower().startswith("s")
+
+    # ---- preguntas de cada disco ----
+    ruta_aj = Path(salida) / "ajustes_discos.json"
+    try:
+        guardados = json.loads(ruta_aj.read_text(encoding="utf-8"))
+    except Exception:
+        guardados = {}
+    log("\nSonido del bajo de cada disco: auto, limpio, limpio_pua, saturado, distorsion, fuzz "
+        "o el nombre de un tono oficial.  Púa: auto (detectar), pua o dedos.")
+    ajustes = {}
+    for art, alb in orden:
+        clave = f"{art} ||| {alb}"
+        previo = guardados.get(clave, {})
+        log(f"\n  {art} > {alb}" + ("  (ajustes recordados de la última vez)" if previo else ""))
+        tono = preguntar("    tono_bajo", previo.get("tono", TONO_MODO), tono_valido)
+        pua = preguntar("    púa", previo.get("pua", "auto"), lambda x: a_ascii(x).lower() in ("auto", "pua", "dedos"))
+        ajustes[(art, alb)] = {"tono": tono, "pua": a_ascii(pua).lower()}
+        guardados[clave] = ajustes[(art, alb)]
+    try:
+        ruta_aj.write_text(json.dumps(guardados, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+    # ---- cola y resumen ----
+    cola, saltadas = [], []
+    for k in orden:
+        for _, _, r in discos[k]["canciones"]:
+            (cola if reintentar or r.name not in fallidas else saltadas).append((r, k, ajustes[k]))
+    estimado = seg_cancion is None
+    seg_cancion = seg_cancion or 270.0
+    horas = len(cola) * seg_cancion / 3600
+    log("\n" + "=" * 70 + "\nRESUMEN DE LA TANDA\n" + "=" * 70)
+    log(f"Dificultad inicial: {DD_INICIAL:.0f} % | arreglo simplificado: {NOMBRES_SIMPLE.get(ARREGLO_SIMPLE, 'no')} | "
+        f"letra: {'si' if LETRA else 'no'} | velocidad de scroll: {('auto ' if VELOCIDAD_AUTO else '') + str(VELOCIDAD_SCROLL)}")
+    for k in orden:
+        n = sum(1 for x in cola if x[1] == k)
+        if n:
+            log(f"  {k[0]} > {k[1]}: {n} {'canción' if n == 1 else 'canciones'} | tono {ajustes[k]['tono']} | púa {ajustes[k]['pua']}")
+    if saltadas:
+        log(f"Se saltan {len(saltadas)} que fallaron antes; {hechas} ya estaban hechas.")
+    log(f"A procesar: {len(cola)} canciones, unas {horas:.1f} h ({seg_cancion / 60:.1f} min por canción"
+        + (", aproximado)." if estimado else " en tus tandas anteriores)."))
+    if not cola:
+        return []
+    if not str(preguntar("¿Empezar? (s/n)", "s", lambda x: x.lower()[:1] in "sn")).lower().startswith("s"):
+        return None
+    return cola
+
+
 def main():
     ap = argparse.ArgumentParser(description="mp3 -> tablatura de bajo + mapa de beats para EOF")
     ap.add_argument("entradas", nargs="*", help="archivos o carpetas (por defecto: carpeta 'entrada')")
@@ -2193,6 +2409,8 @@ def main():
     ap.add_argument("--wwise", help="ruta a WwiseConsole.exe (normalmente se encuentra sola)")
     ap.add_argument("--sin-psarc", action="store_true", help="no compilar: deja sólo el proyecto .rs2dlc")
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
+    ap.add_argument("--sin-preguntas", action="store_true",
+                    help="no preguntar nada: usar lo de configuracion.txt (y lo recordado de cada disco)")
     a = ap.parse_args()
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
     global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO, VELOCIDAD_SCROLL, LETRA, ARREGLO_SIMPLE
@@ -2248,13 +2466,31 @@ def main():
         return
     salida = Path(a.salida); salida.mkdir(parents=True, exist_ok=True)
     ffmpeg_bin()
-    registro = Registro(salida / time.strftime("registro_%Y-%m-%d_%H-%M.txt"), len(archivos), a.forzar)
+    global PUA_FORZADA
+    espera = 60
+    try:
+        espera = int(conf.get("espera_preguntas", 60))
+    except ValueError:
+        pass
+    cola = planificar(archivos, salida, a.forzar, Preguntas(espera, activas=not a.sin_preguntas))
+    if cola is None:
+        log("Cancelado: no se procesa nada.")
+        return
+    if not cola:
+        log("No hay nada pendiente. (Para repetir canciones ya hechas, usa --forzar.)")
+        return
+    registro = Registro(salida / time.strftime("registro_%Y-%m-%d_%H-%M.txt"), len(cola), a.forzar)
+    registro.cabecera += "Discos: " + " || ".join(
+        f"{k[0]} > {k[1]} (tono {aj['tono']}, púa {aj['pua']})"
+        for k, aj in dict((k, aj) for _, k, aj in cola).items()) + "\n"
     ok, fallos = 0, []
-    for i, r in enumerate(archivos, 1):
-        log(f"\n[{i}/{len(archivos)}] {r.name}")
+    for i, (r, disco, aj) in enumerate(cola, 1):
+        TONO_MODO = aj["tono"]
+        PUA_FORZADA = {"pua": True, "dedos": False}.get(aj["pua"])
+        log(f"\n[{i}/{len(cola)}] {r.name}  ({disco[0]} > {disco[1]})")
         t0 = time.time()
         try:
-            estado, resumen = procesar(r, salida, a.forzar)
+            estado, resumen = procesar(r, salida, True)
             ok += estado == "ok"
             registro.cancion(i, r, estado, resumen, time.time() - t0, destino(r, salida)[1] / "informe.txt")
         except Exception as ex:

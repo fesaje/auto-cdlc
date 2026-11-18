@@ -148,6 +148,12 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.9**: antes de empezar mira qué hay pendiente en `entrada` frente a `salida` y lo agrupa por
+  artista > disco (etiquetas; si no hay, consulta en internet). Pregunta la dificultad inicial y el arreglo
+  simplificado de la tanda, si reintentar las que fallaron antes, y el tono y la púa de cada disco (Intro = lo
+  de configuracion.txt o lo elegido la última vez para ese disco, guardado en `salida/ajustes_discos.json`).
+  Resumen con tiempo estimado y confirmación. Si nadie contesta en `espera_preguntas` segundos (60) arranca
+  sola con los valores por defecto. `--sin-preguntas` para no preguntar nada.
 - **2.8.1**: `velocidad_scroll = auto 1.3` ajusta la velocidad de las notas al tempo de cada canción (1.3 a
   120 BPM, proporcional, entre 0.9 y 2.2). El informe dice la que se ha usado.
 - **2.8**: compases ternarios: si la canción va en 3 (3/4, 6/8, zambas, valses) se escribe entera en 3/4
