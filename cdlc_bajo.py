@@ -35,7 +35,9 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.2.9.1"
+VERSION = "0.3.0"
+REPO = "https://github.com/fesaje/auto-cdlc"
+UA = f"auto-cdlc/{VERSION} (+{REPO})"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -1070,14 +1072,14 @@ def _parecido(a, b):
 
 def _http_json(url):
     import json, urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": f"cdlc-bajo/{VERSION}"})
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _http_bytes(url):
     import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": f"cdlc-bajo/{VERSION}"})
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=20) as r:
         return r.read()
 
@@ -1337,7 +1339,7 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     w = L.append
     w("<?xml version='1.0' encoding='UTF-8'?>")
     w('<song version="7">')
-    w("<!-- cdlc-bajo -->")
+    w(f"<!-- auto-cdlc {VERSION} -->")
     w(f"  <title>{E(meta['titulo'])}</title>")
     w("  <arrangement>Bass</arrangement>")
     w("  <part>1</part>")
@@ -1571,7 +1573,7 @@ def buscar_letra(artista, titulo, album, duracion):
     """Letra sincronizada por líneas (formato LRC) de LRCLIB, una base libre de letras. Solo vale si la
     duración coincide con la del mp3 (+-2 s): cada versión de una canción tiene sus tiempos."""
     import json, urllib.parse, urllib.request
-    ua = {"User-Agent": f"cdlc-bajo/{VERSION} (generador personal de CDLC de bajo para Rocksmith 2014)"}
+    ua = {"User-Agent": UA}
 
     def pedir(ruta, **params):
         url = "https://lrclib.net/api/" + ruta + "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v})
@@ -1783,7 +1785,7 @@ def sonoridades(mezcla, bajo):
 
 def versiones():
     import importlib.metadata as md, platform
-    v = {"cdlc-bajo": VERSION, "python": platform.python_version(), "sistema": platform.platform()}
+    v = {"auto-cdlc": VERSION, "python": platform.python_version(), "sistema": platform.platform()}
     for paquete in ("numpy", "scipy", "librosa", "madmom", "audio-separator", "onnxruntime", "torch",
                     "PyGuitarPro", "pyloudnorm", "pillow"):
         try:
@@ -2092,7 +2094,7 @@ def leer_configuracion():
     conf = {}
     ruta = AQUI / "configuracion.txt"
     if ruta.exists():
-        for linea in ruta.read_text(encoding="utf-8").splitlines():
+        for linea in ruta.read_text(encoding="utf-8-sig").splitlines():
             linea = linea.split("#", 1)[0].strip()
             if "=" in linea:
                 k, v = linea.split("=", 1)
@@ -2148,7 +2150,7 @@ class Registro:
     def __init__(self, ruta, total, forzar):
         import platform
         self.ruta, self.total, self.inicio = Path(ruta), total, time.time()
-        self.cabecera = (f"REGISTRO cdlc-bajo {VERSION} | {time.strftime('%Y-%m-%d %H:%M')}\n"
+        self.cabecera = (f"REGISTRO auto-cdlc {VERSION} | {time.strftime('%Y-%m-%d %H:%M')}\n"
                          f"Sistema: {platform.platform()} | Python {platform.python_version()}\n"
                          f"Canciones en la tanda: {total}" + (" | --forzar" if forzar else "") + "\n")
         self.lineas, self.informes, self.errores, self.final = [], [], [], "(tanda en curso)\n"

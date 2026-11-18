@@ -1,4 +1,4 @@
-# Configuración de cdlc-bajo. Las líneas que empiezan por # no cuentan.
+# Configuración de auto-cdlc. Las líneas que empiezan por # no cuentan. Guía completa: docs/uso.md
 
 # Carpeta donde se dejan los .psarc. Si pones la carpeta dlc de Rocksmith, aparecen directamente en el juego.
 # Ejemplo: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
@@ -50,7 +50,7 @@ tono_crepe = si
 #   distorsion -> distorsión fuerte (Motörhead - Ace of Spades)
 #   fuzz       -> fuzz (Nirvana - Breed)
 #   o el nombre de cualquier tono oficial, p. ej. RageKilling_bassdist o Hysteria_bass.
-# Se aplica a todas las canciones del lote: cambia esto por disco si hace falta.
+# Es el valor por defecto: antes de cada tanda se pregunta el tono de cada disco.
 tono_bajo = auto
 
 # Velocidad a la que vienen las notas por el mástil en el juego (de 0.5 a 5).
