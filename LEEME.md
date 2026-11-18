@@ -148,6 +148,14 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.8.1**: `velocidad_scroll = auto 1.3` ajusta la velocidad de las notas al tempo de cada canción (1.3 a
+  120 BPM, proporcional, entre 0.9 y 2.2). El informe dice la que se ha usado.
+- **2.8**: compases ternarios: si la canción va en 3 (3/4, 6/8, zambas, valses) se escribe entera en 3/4
+  en vez de 4/4 con decenas de compases "irregulares", y en esas canciones se aprovecha Beat This! aunque cuente
+  al doble. Segundo arreglo simplificado ('Alt. Bass', opción `arreglo_simple`, por defecto una nota por tiempo,
+  con su propia DD). Letra en pantalla desde LRCLIB si está con la misma duración (opción `letra`, sincronizada
+  por líneas). Nueva opción `velocidad_scroll`. Beat This! sustituye a madmom a partir de un 3 % de pulsos
+  inestables (antes 5 %). cdlc-pack recompilado para verificar también la letra.
 - **2.7**: sonido del bajo en el juego (ampli y pedales) según la canción. Nueva opción `tono_bajo` en
   configuracion.txt: `auto` usa el tono oficial de Rocksmith si la canción o el artista tienen DLC oficial (base de
   1.611 tonos de bajo de DLC Builder, se baja sola la primera vez) y si no, limpio (o limpio brillante con púa).

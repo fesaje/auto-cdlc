@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.7"
+VERSION = "2.8.1"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -44,6 +44,13 @@ WWISE = None
 ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
 PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
 UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
+LETRA = True               # buscar la letra en LRCLIB; configuracion.txt: letra
+ARREGLO_SIMPLE = 2         # None = sin segundo arreglo; 0 compás, 1 medio compás, 2 tiempo, 3 corchea
+NOMBRES_SIMPLE = {0: "una nota por compás", 1: "una por medio compás", 2: "una por tiempo", 3: "una por corchea"}
+VELOCIDAD_SCROLL = 1.3     # velocidad de las notas en el juego; configuracion.txt: velocidad_scroll
+VELOCIDAD_AUTO = False     # "auto": proporcional al tempo (VELOCIDAD_SCROLL es la de 120 BPM)
+VELOCIDAD_LIMITES = (0.9, 2.2)
+MADMOM_INESTABLE = 0.03    # % de beats de madmom fuera de sitio a partir del cual se usan los de Beat This!
 TONO_MODO = "auto"         # tono del bajo en el juego; configuracion.txt: tono_bajo
 TONO_CREPE = True          # tono de cada nota con CREPE (más fiable en graves que pYIN); configuracion.txt: tono_crepe
 DD_INICIAL = 0            # % de notas del nivel más fácil; configuracion.txt: dificultad_inicial
@@ -341,7 +348,7 @@ def detectar_beats(wav_mezcla):
     beats = np.asarray(DBNBeatTrackingProcessor(fps=100, min_bpm=BPM_MIN, max_bpm=BPM_MAX)(
         RNNBeatProcessor()(str(wav_mezcla))))
     info = {"motor_tiempo_1": "madmom"}
-    act = None
+    act, act_alt = None, None
     try:
         act_bt, beats_bt = activacion_beat_this(wav_mezcla)
     except Exception as ex:
@@ -355,14 +362,14 @@ def detectar_beats(wav_mezcla):
         info["madmom_beats_inestables_pct"] = round(100 * inestable, 1)
         if 0.85 < r < 1.15:
             act = act_bt; info["motor_tiempo_1"] = "beat_this"
-            if inestable > 0.05:
+            if inestable > MADMOM_INESTABLE:
                 beats = np.asarray(beats_bt); info["motor_pulso"] = "beat_this (madmom inestable)"
         elif 1.8 < r < 2.2:
             # Beat This! cuenta a la mitad (blancas): sus tiempos 1 siguen cayendo en principios de compás,
             # así que su activación sirve. Si además madmom salta entre tempos, se usan los beats de
             # Beat This! partidos por la mitad, que son más estables
             act = act_bt; info["motor_tiempo_1"] = "beat_this (a mitad de tempo)"
-            if inestable > 0.05:
+            if inestable > MADMOM_INESTABLE:
                 medios = (beats_bt[:-1] + beats_bt[1:]) / 2
                 beats = np.sort(np.concatenate([beats_bt, medios]))
                 info["motor_pulso"] = "beat_this x2 (madmom inestable)"
@@ -370,35 +377,45 @@ def detectar_beats(wav_mezcla):
             # Beat This! cuenta el pulso al doble: su "tiempo 1" marca medios compases y confundiría al
             # detector de compases; se usa la red de compases de madmom
             info["motor_tiempo_1"] = "madmom (beat_this a otro tempo)"
+            if 0.4 < r < 0.6:
+                # Beat This! cuenta al doble. En 4/4 su tiempo 1 no sirve, pero en las canciones ternarias
+                # (6/8, zamba...) cuenta corcheas y su tiempo 1 sí cae en el principio de compás: se guarda
+                # y construir_grid decide si la canción es ternaria y cuál de las dos activaciones usar
+                act_alt = act_bt
     if act is None:
         from madmom.features.downbeats import RNNDownBeatProcessor
         act = np.asarray(RNNDownBeatProcessor()(str(wav_mezcla)))
     beats, puestos, quitados = reparar_beats(beats)
     info["beats_rellenados"], info["beats_quitados"] = puestos, quitados
     DIAG["deteccion_pulso"] = info
-    return beats, act
+    return beats, act, act_alt
 
 
 # probabilidades de compases irregulares (por compás): bajas para que sólo aparezcan con evidencia clara
 P_COMPAS = {2: 0.003, 3: 0.005, 5: 0.005, 6: 0.002}
 
 
-def compases_viterbi(a):
-    """Posición de cada beat dentro de su compás (0 = tiempo 1), compás a compás.
-    Por defecto 4/4; admite compases sueltos de 2, 3, 5 o 6 tiempos si la red lo indica claramente."""
+def compases_viterbi(a, metro=4):
+    """Posición de cada beat dentro de su compás (0 = tiempo 1), compás a compás, y la verosimilitud del
+    camino. El compás de base es 'metro' (4 = 4/4, 3 = 3/4 o 6/8); admite compases sueltos de 2 a 6 tiempos
+    si la red lo indica claramente (en 3/4 no se admite el de 6: son dos de 3)."""
     K = 6
+    largos = {n: P_COMPAS.get(n, 0.0) for n in range(2, K + 1) if n != metro}
+    if metro == 3:
+        largos[6] = 0.0; largos[4] = P_COMPAS[3]
+    largos[metro] = 1 - sum(largos.values())
     LT = np.full((K, K), -np.inf)
-    LT[0, 1] = 0.0
-    LT[1, 2], LT[1, 0] = np.log(1 - P_COMPAS[2]), np.log(P_COMPAS[2])
-    LT[2, 3], LT[2, 0] = np.log(1 - P_COMPAS[3]), np.log(P_COMPAS[3])
-    LT[3, 0], LT[3, 4] = np.log(1 - P_COMPAS[5] - P_COMPAS[6]), np.log(P_COMPAS[5] + P_COMPAS[6])
-    p6 = P_COMPAS[6] / (P_COMPAS[5] + P_COMPAS[6])
-    LT[4, 0], LT[4, 5] = np.log(1 - p6), np.log(p6)
-    LT[5, 0] = 0.0
+    resto = 1.0
+    for st in range(K):                         # en la posición st, el compás acaba con st+1 tiempos
+        pf = largos.get(st + 1, 0.0)
+        h = pf / resto if resto > 1e-12 else 1.0
+        if h > 0: LT[st, 0] = np.log(min(h, 1.0))
+        if h < 1 and st + 1 < K: LT[st, st + 1] = np.log(1 - h)
+        resto -= pf
     a = np.clip(a, 1e-3, 1 - 1e-3)
     em = np.stack([np.log(a)] + [np.log(1 - a)] * (K - 1), axis=1)       # (N, K)
     N = len(a)
-    d = np.full(K, -np.inf); d[:4] = np.log(0.25); d = d + em[0]
+    d = np.full(K, -np.inf); d[:metro] = np.log(1 / metro); d = d + em[0]
     bp = np.zeros((N, K), dtype=int)
     for i in range(1, N):
         c = d[:, None] + LT                    # desde (fila) -> hacia (columna)
@@ -406,33 +423,53 @@ def compases_viterbi(a):
     pos = np.zeros(N, dtype=int); pos[-1] = int(d.argmax())
     for i in range(N - 1, 0, -1):
         pos[i - 1] = bp[i, pos[i]]
-    return pos
+    return pos, float(d.max())
 
 
-def construir_grid(beats, act, duracion):
+def construir_grid(beats, act, duracion, act_alt=None):
     """Devuelve grid de beats (cubre desde antes del segundo 0 hasta el final), índices de inicio de compás
-    (el último es la marca de fin), tempo, confianza del tiempo 1 y compases irregulares."""
+    (el último es la marca de fin), tempo, confianza del tiempo 1, compases irregulares y compás de base.
+    Se prueba 4/4 y 3/4 (las canciones en 3 o en 6/8 salían como 4/4 con decenas de compases "irregulares").
+    act_alt: activación de Beat This! cuando cuenta al doble; solo vale si la canción es ternaria."""
     med = float(np.median(np.diff(beats)))
     fr = np.clip(np.round(beats * 100).astype(int), 0, len(act) - 1)
-    a = np.array([act[max(0, f - 2):f + 3, 1].max() for f in fr])
-    pos = compases_viterbi(a)
+
+    def act_en(ac):
+        f = np.clip(fr, 0, len(ac) - 1)
+        return np.array([ac[max(0, x - 2):x + 3, 1].max() for x in f])
+
+    candidatos = []
+    for nombre, ac in (("principal", act), ("beat_this_doble", act_alt)):
+        if ac is None:
+            continue
+        a_ = act_en(ac)
+        p4, l4 = compases_viterbi(a_, 4)
+        p3, l3 = compases_viterbi(a_, 3)
+        # 3/4 si explica claramente mejor el tiempo 1 (margen para no cambiar canciones en 4/4 por ruido)
+        metro_, pos_, ll = (3, p3, l3) if l3 > l4 + 6.0 else (4, p4, l4)
+        if nombre == "beat_this_doble" and metro_ != 3:
+            continue                            # en 4/4 al doble, su "tiempo 1" marca medios compases
+        uno = a_[pos_ == 0].mean() if (pos_ == 0).any() else 0.0
+        otros = a_[pos_ != 0].mean() if (pos_ != 0).any() else 0.0
+        candidatos.append((uno - otros, nombre, metro_, pos_, a_, round(l3 - l4, 1)))
+    _, fuente, metro, pos, a, ventaja3 = max(candidatos, key=lambda c: c[0])
     # En el final (ritardando, fundido, nota larga) los beats son poco fiables y salen compases "irregulares"
-    # falsos: los últimos 3 compases se fuerzan a 4/4, empezando en el último tiempo 1 anterior.
-    corte = len(pos) - 12
-    if corte > 4:
+    # falsos: los últimos 3 compases se fuerzan al compás de base, empezando en el último tiempo 1 anterior.
+    corte = len(pos) - 3 * metro
+    if corte > metro:
         inicio = max(i for i in range(corte + 1) if pos[i] == 0)
         pos = pos.copy()
-        pos[inicio:] = np.arange(len(pos) - inicio) % 4
-    # hacia atrás: completar el compás del primer beat y añadir compases de 4 hasta cubrir el segundo 0
+        pos[inicio:] = np.arange(len(pos) - inicio) % metro
+    # hacia atrás: completar el compás del primer beat y añadir compases enteros hasta cubrir el segundo 0
     n_pre = int(pos[0])
     while beats[0] - n_pre * med > 0:
-        n_pre += 4
+        n_pre += metro
     grid = list(beats[0] - k * med for k in range(n_pre, 0, -1)) + list(beats)
-    posg = [(int(pos[0]) - k) % 4 for k in range(n_pre, 0, -1)] + list(pos)
-    # hacia delante: seguir en 4/4 hasta pasar el final y cerrar el compás (el último beat es tiempo 1 = fin)
+    posg = [(int(pos[0]) - k) % metro for k in range(n_pre, 0, -1)] + list(pos)
+    # hacia delante: seguir en el compás de base hasta pasar el final y cerrar el compás
     while grid[-1] < duracion + med or posg[-1] != 0:
         grid.append(grid[-1] + med)
-        posg.append(0 if posg[-1] >= 3 else posg[-1] + 1)
+        posg.append(0 if posg[-1] >= metro - 1 else posg[-1] + 1)
     grid, posg = np.array(grid), np.array(posg)
     barras = np.flatnonzero(posg == 0)
     # confianza: compases (con beats reales) cuyo tiempo 1 tiene la activación más alta del compás
@@ -444,7 +481,7 @@ def construir_grid(beats, act, duracion):
         if np.isnan(seg).any():
             continue
         total += 1; aciertos += int(np.argmax(seg) == 0)
-        if len(seg) != 4:
+        if len(seg) != metro:
             irregulares.append((i, len(seg)))
     conf = aciertos / total if total else 0.0
     ibi = np.diff(beats)
@@ -463,8 +500,9 @@ def construir_grid(beats, act, duracion):
         "activacion_media_resto": round(float(np.mean(a_otros)), 3),
         "compases_irregulares": [{"compas_grid": i, "tiempos": n} for i, n in irregulares],
         "beats_añadidos_al_principio": int(n_pre),
+        "compas_de_base": f"{metro}/4", "ventaja_3_sobre_4": ventaja3, "activacion_tiempo_1": fuente,
     }
-    return grid, barras, 60 / med, conf, irregulares
+    return grid, barras, 60 / med, conf, irregulares, metro
 
 
 # ---------------- 3. notas ----------------
@@ -1265,7 +1303,7 @@ def niveles_dd(tab, compases, completo):
     return nivel, compas_de
 
 
-def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, duracion_audio):
+def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, duracion_audio, principal=True):
     from xml.sax.saxutils import escape
     E = lambda x: escape(str(x), {'"': "&quot;"})
     offsets = [c - base for c, base in zip(cuerdas, [28, 33, 38, 43])]
@@ -1308,7 +1346,7 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     w(f"  <albumName>{E(meta['album'])}</albumName>")
     w(f"  <albumYear>{meta['year']}</albumYear>")
     w("  <crowdSpeed>1</crowdSpeed>")
-    w(f'  <arrangementProperties represent="1" bonusArr="0" standardTuning="{estandar}" nonStandardChords="0" '
+    w(f'  <arrangementProperties represent="{int(principal)}" bonusArr="0" standardTuning="{estandar}" nonStandardChords="0" '
       'barreChords="0" powerChords="0" dropDPower="0" openChords="0" fingerPicking="0" pickDirection="0" '
       'doubleStops="0" palmMutes="0" harmonics="0" pinchHarmonics="0" hopo="0" tremolo="0" slides="0" '
       'unpitchedSlides="0" bends="0" tapping="0" vibrato="0" fretHandMutes="0" slapPop="0" twoFingerPicking="0" '
@@ -1351,7 +1389,8 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
             fs = firmas_de(bl)
             opciones.append((distintas(fs) / max(len(fs), 1), o, bl))
         _, desplazamiento, bloques = min(opciones, key=lambda x: (x[0], x[1]))
-        DIAG.setdefault("frases", {})["desplazamiento_compases"] = desplazamiento
+        if principal:
+            DIAG.setdefault("frases", {})["desplazamiento_compases"] = desplazamiento
         cortes = [beats[b] for b in bloques]
         cortes[0] = t_musica
         lim = cortes + [t_end]
@@ -1487,7 +1526,7 @@ def escribir_xml_rs(ruta, completo, compases, tab, cuerdas, cents, pua, meta, du
     w("  </levels>")
     w("</song>")
     Path(ruta).write_text("\n".join(L) + "\n", encoding="utf-8")
-    DIAG["dificultad"] = {"modo": DD_MODO, "inicial_pct": DD_INICIAL, "niveles": len(niveles),
+    DIAG["dificultad" if principal else "dificultad_arreglo_simple"] = {"modo": DD_MODO, "inicial_pct": DD_INICIAL, "niveles": len(niveles),
                           "notas_por_nivel": [len(n) for n in niveles],
                           "frases_distintas": len(frases) - 2, "repeticiones_de_frase": len(iteraciones) - 2,
                           "secciones": len(secciones),
@@ -1501,7 +1540,112 @@ def tempo_medio_aprox(beats, t):
     return 60.0 / max(beats[i] - beats[i - 1], 1e-3)
 
 
-def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua, tono=None):
+# ---------------- letra (arreglo de voz) ----------------
+LETRA_CHARSET = set(""" !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~¡¢¥¦§¨ª«°²³´•¸¹º»¼½¾¿ÀÁÂÄÅÆÇÈÉÊËÌÎÏÑÒÓÔÖØÙÚÛÜÞßàáâäåæçèéêëìíîïñòóôöøùúûüŒœŠšž„…€™""")
+
+
+def _limpiar_letra(palabra):
+    """Solo caracteres que tiene la fuente de letras de Rocksmith (la Í, las comillas tipográficas... no)."""
+    import unicodedata
+    cambios = {"’": "'", "‘": "'", "´": "'", "“": '"', "”": '"', "«": '"', "»": '"', "—": "-", "–": "-"}
+    out = ""
+    for ch in palabra:
+        ch = cambios.get(ch, ch)
+        if ch not in LETRA_CHARSET:
+            ch = "".join(c for c in unicodedata.normalize("NFD", ch) if c in LETRA_CHARSET)
+        out += ch
+    while len(out.encode("utf-8")) > 46:
+        out = out[:-1]
+    return out
+
+
+def buscar_letra(artista, titulo, album, duracion):
+    """Letra sincronizada por líneas (formato LRC) de LRCLIB, una base libre de letras. Solo vale si la
+    duración coincide con la del mp3 (+-2 s): cada versión de una canción tiene sus tiempos."""
+    import json, urllib.parse, urllib.request
+    ua = {"User-Agent": f"cdlc-bajo/{VERSION} (generador personal de CDLC de bajo para Rocksmith 2014)"}
+
+    def pedir(ruta, **params):
+        url = "https://lrclib.net/api/" + ruta + "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v})
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=ua), timeout=15) as r:
+                return json.load(r)
+        except Exception:
+            return None
+        finally:
+            time.sleep(0.3)
+
+    titulo_corto = re.sub(r"\s*[\(\[].*?[\)\]]", "", titulo).strip() or titulo
+    dur = int(round(duracion))
+    intentos = []
+    for t in dict.fromkeys([titulo, titulo_corto]):
+        for alb in ([album, None] if album else [None]):
+            r = pedir("get", track_name=t, artist_name=artista, album_name=alb, duration=dur)
+            intentos.append(f"get '{t}'" + (f" / '{alb}'" if alb else ""))
+            if r and r.get("syncedLyrics"):
+                return r, intentos
+    for t in dict.fromkeys([titulo, titulo_corto]):
+        res = pedir("search", track_name=t, artist_name=artista) or []
+        intentos.append(f"search '{t}'")
+        buenos = [x for x in res if x.get("syncedLyrics") and x.get("duration")
+                  and abs(float(x["duration"]) - duracion) <= 2.0]
+        if buenos:
+            return min(buenos, key=lambda x: abs(float(x["duration"]) - duracion)), intentos
+    return None, intentos
+
+
+def escribir_letra(ruta, lrc, desplazamiento, fin_cancion):
+    """Arreglo de voz de Rocksmith a partir del LRC. El LRC solo da cuándo empieza cada línea: las palabras
+    se reparten dentro de la línea según su largo (cantadas a un ritmo normal, no estiradas hasta la línea
+    siguiente). Devuelve el número de líneas."""
+    from xml.sax.saxutils import quoteattr
+    lineas = []
+    for l in lrc.splitlines():
+        marcas = re.findall(r"\[(\d+):(\d+(?:\.\d+)?)\]", l)
+        texto = re.sub(r"\[[^\]]*\]", "", l).strip()
+        for mm, ss in marcas:
+            lineas.append((int(mm) * 60 + float(ss) + desplazamiento, texto))
+    lineas.sort()
+    vocales = []
+    lineas = [x for x in lineas if 0 <= x[0] < fin_cancion - 0.5]
+    for k, (t, texto) in enumerate(lineas):
+        palabras = [w for w in (_limpiar_letra(p) for p in texto.split()) if w]
+        if not palabras:
+            continue
+        fin = lineas[k + 1][0] if k + 1 < len(lineas) else min(t + 6.0, fin_cancion)
+        hueco = max(0.2, fin - t - 0.1)
+        pesos = np.array([len(w) + 2 for w in palabras], dtype=float)
+        largo = min(hueco, pesos.sum() * 0.075 + 0.4)       # ~ 3 sílabas por segundo
+        bordes = t + largo * np.concatenate([[0], np.cumsum(pesos) / pesos.sum()])
+        for j, w in enumerate(palabras):
+            dur = max(0.05, (bordes[j + 1] - bordes[j]) * 0.9)
+            vocales.append((float(bordes[j]), dur, w + ("+" if j == len(palabras) - 1 else "")))
+    if not vocales:
+        return 0
+    L = ["<?xml version='1.0' encoding='UTF-8'?>", f'<vocals count="{len(vocales)}">']
+    L += [f'  <vocal time="{t:.3f}" note="254" length="{d:.3f}" lyric={quoteattr(w)} />' for t, d, w in vocales]
+    L.append("</vocals>")
+    Path(ruta).write_text("\n".join(L) + "\n", encoding="utf-8")
+    return sum(1 for _, _, w in vocales if w.endswith("+"))
+
+
+def tab_simplificada(tab, compases, completo, nivel_max):
+    """Para el arreglo alternativo: solo las notas de los niveles rítmicos hasta nivel_max (0 = una por
+    compás, 1 = medio compás, 2 = una por tiempo, 3 = corcheas). Cada nota se mantiene hasta la siguiente
+    (como mucho medio compás) para que el bajo no quede a saltos."""
+    nivel, _ = niveles_dd(tab, compases, completo)
+    sel = sorted((n for n, d in zip(tab, nivel) if d <= nivel_max), key=lambda n: n[0])
+    out = []
+    for k, (s0, s1, p, cu, tr) in enumerate(sel):
+        sig = sel[k + 1][0] if k + 1 < len(sel) else s1
+        if sig - s1 > 1:
+            s1 = max(s1, min(sig - 1, s0 + 8))
+        out.append((s0, s1, p, cu, tr))
+    return out
+
+
+def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua, tono=None,
+                      xml_simple=None, xml_letra=None, velocidad=None):
     import json, uuid, zlib
     clave = "cb" + (StringValidator_dlckey(a_ascii(meta["artista"]))[:5] + StringValidator_dlckey(a_ascii(meta["titulo"]))[:5])
     if len(clave) < 5:
@@ -1523,7 +1667,7 @@ def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cu
             "Case": "Instrumental",
             "Fields": [{
                 "XML": Path(xml).name,
-                "Name": 3, "RouteMask": 4, "Priority": 0, "ScrollSpeed": 1.3,
+                "Name": 3, "RouteMask": 4, "Priority": 0, "ScrollSpeed": velocidad or VELOCIDAD_SCROLL,
                 "BassPicked": bool(pua),
                 "Tuning": offsets,
                 "TuningPitch": round(440 * 2 ** (cents / 1200), 2),
@@ -1534,6 +1678,20 @@ def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cu
         }],
         "Tones": [tono or TONO_BAJO],
     }
+    bajo = proyecto["Arrangements"][0]["Fields"][0]
+    if xml_simple:
+        # arreglo alternativo ("Alt. Bass" en el juego): mismos datos, otro XML, otros identificadores
+        s2 = zlib.crc32((clave + "simple").encode())
+        proyecto["Arrangements"].append({"Case": "Instrumental", "Fields": [{
+            **bajo, "XML": Path(xml_simple).name, "Priority": 1,
+            "MasterID": int(s2 % 2_000_000_000) + 1,
+            "PersistentID": str(uuid.UUID(int=(s2 << 96) | (s2 << 32) | 0xC0FFEE))}]})
+    if xml_letra:
+        s3 = zlib.crc32((clave + "letra").encode())
+        proyecto["Arrangements"].append({"Case": "Vocals", "Fields": [{
+            "XML": Path(xml_letra).name, "Japanese": False, "CustomFont": None,
+            "MasterID": int(s3 % 2_000_000_000) + 1,
+            "PersistentID": str(uuid.UUID(int=(s3 << 96) | (s3 << 32) | 0xC0FFEE))}]})
     Path(ruta).write_text(json.dumps(proyecto, ensure_ascii=False, indent=2), encoding="utf-8")
     return proyecto
 
@@ -1687,8 +1845,8 @@ def procesar(ruta, salida, forzar):
             raise RuntimeError(f"no parece tener bajo (lo separado está {-dif:.0f} dB por debajo de la mezcla); "
                                "no genero tablatura")
         log("  [2/6] Detectando beats y compases...")
-        beats, act = detectar_beats(mezcla_mono)
-        grid, barras, bpm, conf, irregulares = construir_grid(beats, act, duracion)
+        beats, act, act_alt = detectar_beats(mezcla_mono)
+        grid, barras, bpm, conf, irregulares, metro = construir_grid(beats, act, duracion, act_alt)
         marca("beats_y_compases")
         log("  [3/6] Transcribiendo notas...")
         y, notas, n_ataques, n_cqt, cents, pua, pitches_pyin = transcribir(bajo, 60.0 / bpm / 4)
@@ -1750,13 +1908,57 @@ def procesar(ruta, salida, forzar):
         cents_aplicado = cents if abs(cents) >= UMBRAL_CENTS else 0.0
         info_xml = escribir_xml_rs(xml_path, completo, compases, tab, cuerdas, cents_aplicado,
                                    pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, meta, duracion_ogg)
+        con_pua = bool(pua >= PUA_UMBRAL_DB) if not np.isnan(pua) else False
+        if VELOCIDAD_AUTO:
+            # proporcional al tempo: a 120 BPM la base; a 60 la mitad, a 180 vez y media (con límites para
+            # que una canción lentísima no se arrastre ni una rapidísima pase volando)
+            velocidad = round(float(np.clip(VELOCIDAD_SCROLL * bpm / 120, *VELOCIDAD_LIMITES)), 2)
+            txt_vel = f"{velocidad} (automática: {VELOCIDAD_SCROLL} a 120 BPM, esta va a {bpm:.0f})"
+        else:
+            velocidad, txt_vel = VELOCIDAD_SCROLL, f"{VELOCIDAD_SCROLL} (fija)"
+        DIAG["velocidad_scroll"] = velocidad
+        # segundo arreglo, simplificado ("Alt. Bass" en el juego)
+        xml_simple, txt_simple = None, "no (desactivado en la configuración)"
+        if ARREGLO_SIMPLE is not None:
+            tab_s = tab_simplificada(tab, compases, completo, ARREGLO_SIMPLE)
+            if len(tab_s) >= 8 and len(tab_s) <= 0.85 * len(tab):
+                xml_simple = dest / f"{nombre}_bass2_RS2.xml"
+                escribir_xml_rs(xml_simple, completo, compases, tab_s, cuerdas, cents_aplicado, con_pua, meta,
+                                duracion_ogg, principal=False)
+                txt_simple = (f"sí, 'Alt. Bass' en el juego: {len(tab_s)} de {len(tab)} notas "
+                              f"({NOMBRES_SIMPLE[ARREGLO_SIMPLE]})")
+            else:
+                txt_simple = (f"no: simplificado quedaría con {len(tab_s)} de {len(tab)} notas, "
+                              "casi igual que el completo (o casi vacío)")
+            DIAG["arreglo_simple"] = {"nivel": NOMBRES_SIMPLE[ARREGLO_SIMPLE], "notas": len(tab_s),
+                                      "notas_completo": len(tab), "incluido": xml_simple is not None}
+        # letra (arreglo de voz) de LRCLIB
+        xml_letra, txt_letra = None, "no (desactivada en la configuración)"
+        if LETRA and SIN_INTERNET:
+            txt_letra = "no (sin internet)"
+        elif LETRA:
+            rec, intentos = buscar_letra(meta["artista"], meta["titulo"], meta.get("album"), duracion)
+            DIAG["letra"] = {"intentos": intentos}
+            if rec:
+                xml_letra = dest / f"{nombre}_vocals_RS2.xml"
+                n_lineas = escribir_letra(xml_letra, rec["syncedLyrics"], pad, duracion_ogg)
+                DIAG["letra"].update({"lrclib_id": rec.get("id"), "album": rec.get("albumName"),
+                                      "duracion": rec.get("duration"), "lineas": n_lineas})
+                if n_lineas:
+                    txt_letra = (f"sí, {n_lineas} líneas de LRCLIB (disco '{rec.get('albumName')}'). Sincronizada "
+                                 "por líneas: dentro de cada línea las palabras van repartidas, no clavadas")
+                else:
+                    xml_letra, txt_letra = None, "no: la letra encontrada está vacía"
+            else:
+                txt_letra = "no encontrada en LRCLIB con la misma duración"
         inicio_prev = escribir_preview(dest / f"{nombre}.ogg", dest / f"{nombre}_preview.ogg", duracion_ogg)
         portada, origen_portada = crear_portada(ruta, dest / "portada.png", artista, titulo, caratula)
         tono, origen_tono = elegir_tono(meta["artista"], meta["titulo"],
                                         pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, bajo)
         escribir_proyecto(dest / f"{nombre}.rs2dlc", meta, xml_path, dest / f"{nombre}.ogg",
                           dest / f"{nombre}_preview.ogg", inicio_prev, portada, cuerdas, cents_aplicado,
-                          pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, tono)
+                          pua >= PUA_UMBRAL_DB if not np.isnan(pua) else False, tono,
+                          xml_simple=xml_simple, xml_letra=xml_letra, velocidad=velocidad)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
         marca("escribir_archivos")
         psarcs, error_psarc = [], "desactivada (--sin-psarc)"
@@ -1835,18 +2037,20 @@ def procesar(ruta, salida, forzar):
     txt_portada = (f"PORTADA: {origen_portada}" + (f" | álbum: {meta['album']}" if meta['album'] else "")
                    + f" | año: {meta['year']}\n")
     informe = (f"Canción: {artista} - {titulo}  (nombre tomado de {fuente})\nArchivo: {ruta.name}\n\n" + txt_psarc + txt_proyecto + txt_portada + "\n"
-               + txt_afin + txt_cents + txt_pua + f"TONO DEL BAJO EN EL JUEGO: {origen_tono}\n" + "\n"
-               f"Tempo mediano: {bpm:.1f} BPM | confianza del tiempo 1: {conf*100:.0f}%\n"
+               + txt_afin + txt_cents + txt_pua + f"TONO DEL BAJO EN EL JUEGO: {origen_tono}\n"
+               + f"VELOCIDAD DE SCROLL: {txt_vel}\n" + f"ARREGLO SIMPLIFICADO: {txt_simple}\n" + f"LETRA: {txt_letra}\n" + "\n"
+               f"Tempo mediano: {bpm:.1f} BPM | compás: {metro}/4"
+               + (" (ternario: 3/4 o 6/8)" if metro == 3 else "") + f" | confianza del tiempo 1: {conf*100:.0f}%\n"
                f"Ataques detectados: {n_ataques} | notas: {len(notas)} (resueltas por CQT: {n_cqt}) | "
                f"en la tablatura: {n_gp}\n"
                f"Desfase de ataques corregido: {desfase*1000:.0f} ms | notas dudosas al cuantizar: {ambiguas*100:.0f}%\n"
                f"Notas por compás (mediana): {np.median(per):.0f}\n"
                f"Silencio inicial añadido: {pad:.3f} s | compases: {n_compases} (el 1 es el COUNT, vacío)\n"
-               + (f"Compases irregulares (cambian el 4/4): " + ", ".join(
+               + (f"Compases irregulares (cambian el {metro}/4): " + ", ".join(
                       f"compás {c} en {n}/4 ({mmss(completo[compases[c - 1][0]] - pad)})" for c, n in irregulares)
                   + "\n  -> El minuto es el de la canción original. Ya van en el proyecto y en el .gp5\n"
                   + "     (si montas por EOF, acepta importar los compases / time signatures).\n"
-                  if irregulares else "Compases irregulares: ninguno (todo 4/4)\n")
+                  if irregulares else f"Compases irregulares: ninguno (todo {metro}/4)\n")
                + f"Tiempo de proceso: {time.time()-t_ini:.0f} s\n")
     (dest / "informe.txt").write_text(informe, encoding="utf-8")
     # diagnóstico completo (para depurar): diagnostico.json en la carpeta y en el registro general
@@ -1861,7 +2065,7 @@ def procesar(ruta, salida, forzar):
     import json
     (dest / "diagnostico.json").write_text(json.dumps(DIAG, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     aviso = "  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics" if conf < 0.6 else ""
-    extra = f" | {afin_nombre}" + (f" | Tuning Pitch {cents_aplicado:+.0f} cents" if cents_aplicado else "") + \
+    extra = f" | {afin_nombre}" + (" | compás 3/4" if metro == 3 else "") + (f" | Tuning Pitch {cents_aplicado:+.0f} cents" if cents_aplicado else "") + \
             (" | púa" if veredicto.startswith("PROB") else "") + \
             (f" | {len(irregulares)} compases irregulares" if irregulares else "")
     if problemas:
@@ -1945,7 +2149,7 @@ class Registro:
             self.cabecera += (f"Configuración: psarc={'si' if COMPILAR else 'no'} | carpeta={CARPETA_PSARC} | "
                               f"carátulas={'no' if SIN_INTERNET else 'si'} | umbral_cents={UMBRAL_CENTS} | dificultad={DD_MODO} (inicial {DD_INICIAL:.0f} %) | "
                               f"wwise={WWISE or 'automático'} | partir_repetidas={'si' if PARTIR_REPETIDAS else 'no'} "
-                              f"({UMBRAL_REATAQUE_DB} dB) | tono_crepe={'si' if TONO_CREPE else 'no'} | tono_bajo={TONO_MODO}\n")
+                              f"({UMBRAL_REATAQUE_DB} dB) | tono_crepe={'si' if TONO_CREPE else 'no'} | tono_bajo={TONO_MODO} | velocidad_scroll={('auto ' if VELOCIDAD_AUTO else '') + str(VELOCIDAD_SCROLL)} | letra={'si' if LETRA else 'no'} | arreglo_simple={NOMBRES_SIMPLE.get(ARREGLO_SIMPLE, 'no')}\n")
         except Exception:
             pass
         self._guardar()
@@ -1991,12 +2195,24 @@ def main():
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     a = ap.parse_args()
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
-    global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO
+    global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO, VELOCIDAD_SCROLL, LETRA, ARREGLO_SIMPLE
+    global VELOCIDAD_AUTO
     conf = leer_configuracion()
     no = ("no", "false", "0")
     PARTIR_REPETIDAS = conf.get("partir_repetidas", "si").lower() not in no
     TONO_CREPE = conf.get("tono_crepe", "si").lower() not in no
     TONO_MODO = conf.get("tono_bajo", "auto").strip() or "auto"
+    LETRA = conf.get("letra", "si").lower() not in no
+    ARREGLO_SIMPLE = {"no": None, "ninguno": None, "compas": 0, "compás": 0, "medio": 1, "medio compas": 1,
+                      "medio compás": 1, "tiempo": 2, "corchea": 3}.get(
+        conf.get("arreglo_simple", "tiempo").strip().lower(), 2)
+    v = conf.get("velocidad_scroll", "1.3").strip().lower()
+    VELOCIDAD_AUTO = v.startswith("auto")
+    try:
+        v = v[4:].strip() if VELOCIDAD_AUTO else v
+        VELOCIDAD_SCROLL = min(5.0, max(0.5, float(v.replace(",", ".")))) if v else 1.3
+    except ValueError:
+        pass
     try:
         UMBRAL_REATAQUE_DB = float(conf.get("umbral_reataque_db", UMBRAL_REATAQUE_DB))
     except ValueError:
