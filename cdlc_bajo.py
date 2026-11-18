@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.9.1"
+VERSION = "0.2.9.1"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -193,7 +193,7 @@ def destino(ruta, salida):
     if (antiguo / f"{ruta.stem}.gp5").exists():
         return ruta.stem, antiguo, artista, titulo, fuente, et
     base = nombre_carpeta(artista, titulo)
-    # nombre con la regla de la 2.1.1 ('?' y ':' cambiados por '-'): si ya existe, se reutiliza
+    # nombre con la regla de la 0.2.1.1 ('?' y ':' cambiados por '-'): si ya existe, se reutiliza
     viejo = re.sub(r"\s+", " ", re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", f"{artista} - {titulo}")).strip().rstrip(". ")[:120].rstrip(". ")
     if viejo != base and (salida / viejo / f"{viejo}.gp5").exists():
         return viejo, salida / viejo, artista, titulo, fuente, et

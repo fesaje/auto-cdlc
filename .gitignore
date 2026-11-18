@@ -1,0 +1,17 @@
+# entorno y cachés
+.venv/
+__pycache__/
+*.pyc
+bin/
+# lo que genera el programa o se descarga solo
+salida/*
+!salida/.gitkeep
+entrada/*
+!entrada/.gitkeep
+modelos/*
+!modelos/.gitkeep
+psarc/
+# cdlc-pack compilado: va en las releases de GitHub (lo baja instalar.bat)
+herramientas/cdlc-pack/*
+!herramientas/cdlc-pack/codigo/
+!herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt

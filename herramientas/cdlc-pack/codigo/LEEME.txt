@@ -1,0 +1,10 @@
+cdlc-pack: compila un proyecto de DLC Builder (.rs2dlc) a .psarc sin abrir DLC Builder.
+
+Usa las librerías de DLC Builder (Rocksmith2014.NET, de iminashi, licencia MIT):
+https://github.com/iminashi/Rocksmith2014.NET  (compilado sobre el commit 4cf33251)
+
+Para recompilarlo: copia esta carpeta como samples/CdlcPack dentro de ese repositorio y ejecuta
+  dotnet publish samples/CdlcPack -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+                 -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+
+Uso directo:  cdlc-pack.exe proyecto.rs2dlc [--salida CARPETA] [--wwise RUTA\WwiseConsole.exe] [--mac] [--sin-dd]
