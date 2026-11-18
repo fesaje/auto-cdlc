@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "2.9"
+VERSION = "2.9.1"
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
 DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
@@ -2331,6 +2331,25 @@ def planificar(archivos, salida, forzar, preguntar):
         n = len(d['canciones'])
         log(f"  {art} > {alb}: {n} {'canción' if n == 1 else 'canciones'}{nota}")
 
+    reintentar = True
+    fallaron = [r for r in pendientes if r.name in fallidas]
+    if fallaron:
+        log(f"\n{len(fallaron)} de las pendientes dieron error en tandas anteriores (p. ej. sin bajo):")
+        for r in fallaron[:8]:
+            log(f"   - {r.name}")
+        if len(fallaron) > 8:
+            log(f"   ... y {len(fallaron) - 8} más")
+        reintentar = str(preguntar("¿Reintentarlas? (s/n)", "n", lambda x: x.lower()[:1] in "sn")).lower().startswith("s")
+
+    if not reintentar:
+        # lo que no se va a procesar no entra en las preguntas ni en el resumen
+        for d in discos.values():
+            d["canciones"] = [c for c in d["canciones"] if c[2].name not in fallidas]
+        orden = [k for k in orden if discos[k]["canciones"]]
+        if not orden:
+            log("No queda nada que procesar.")
+            return []
+
     # ---- preguntas de la tanda ----
     log("\nPulsa Intro para dejar lo que hay entre corchetes (lo de configuracion.txt).")
     v = preguntar("Dificultad inicial para toda la tanda (% de notas con que empieza cada frase, 0-95)",
@@ -2342,16 +2361,6 @@ def planificar(archivos, salida, forzar, preguntar):
     v = preguntar("Arreglo simplificado (tiempo / medio / compas / corchea / no)", actual,
                   lambda x: x.lower() in claves_simple)
     ARREGLO_SIMPLE = claves_simple[str(v).lower()]
-    reintentar = True
-    fallaron = [r for r in pendientes if r.name in fallidas]
-    if fallaron:
-        log(f"\n{len(fallaron)} de las pendientes dieron error en tandas anteriores (p. ej. sin bajo):")
-        for r in fallaron[:8]:
-            log(f"   - {r.name}")
-        if len(fallaron) > 8:
-            log(f"   ... y {len(fallaron) - 8} más")
-        reintentar = str(preguntar("¿Reintentarlas? (s/n)", "n", lambda x: x.lower()[:1] in "sn")).lower().startswith("s")
-
     # ---- preguntas de cada disco ----
     ruta_aj = Path(salida) / "ajustes_discos.json"
     try:
@@ -2375,10 +2384,8 @@ def planificar(archivos, salida, forzar, preguntar):
         pass
 
     # ---- cola y resumen ----
-    cola, saltadas = [], []
-    for k in orden:
-        for _, _, r in discos[k]["canciones"]:
-            (cola if reintentar or r.name not in fallidas else saltadas).append((r, k, ajustes[k]))
+    cola = [(r, k, ajustes[k]) for k in orden for _, _, r in discos[k]["canciones"]]
+    saltadas = [] if reintentar else fallaron
     estimado = seg_cancion is None
     seg_cancion = seg_cancion or 270.0
     horas = len(cola) * seg_cancion / 3600
@@ -2391,7 +2398,7 @@ def planificar(archivos, salida, forzar, preguntar):
             log(f"  {k[0]} > {k[1]}: {n} {'canción' if n == 1 else 'canciones'} | tono {ajustes[k]['tono']} | púa {ajustes[k]['pua']}")
     if saltadas:
         log(f"Se saltan {len(saltadas)} que fallaron antes; {hechas} ya estaban hechas.")
-    log(f"A procesar: {len(cola)} canciones, unas {horas:.1f} h ({seg_cancion / 60:.1f} min por canción"
+    log(f"A procesar: {len(cola)} {'canción' if len(cola) == 1 else 'canciones'}, unas {horas:.1f} h ({seg_cancion / 60:.1f} min por canción"
         + (", aproximado)." if estimado else " en tus tandas anteriores)."))
     if not cola:
         return []

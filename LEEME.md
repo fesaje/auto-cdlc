@@ -148,6 +148,8 @@ Los modelos de madmom tienen licencia CC BY-NC-SA: solo para uso no comercial.
 
 ## Historial
 
+- **2.9.1**: la pregunta de reintentar las que fallaron va primero; si dices que no, sus discos ya no
+  se preguntan ni salen en el resumen.
 - **2.9**: antes de empezar mira qué hay pendiente en `entrada` frente a `salida` y lo agrupa por
   artista > disco (etiquetas; si no hay, consulta en internet). Pregunta la dificultad inicial y el arreglo
   simplificado de la tanda, si reintentar las que fallaron antes, y el tono y la púa de cada disco (Intro = lo
