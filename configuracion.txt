@@ -1,5 +1,8 @@
 # Configuración de auto-cdlc. Las líneas que empiezan por # no cuentan. Guía completa: docs/es/uso.md
 
+# Idioma de los menús, preguntas e informes: es (español) o en (inglés). Lo pregunta instalar.bat.
+idioma =
+
 # Carpeta donde se dejan los .psarc. Si pones la carpeta dlc de Rocksmith, aparecen directamente en el juego.
 # Ejemplo: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
 # Si no pones nada, van a la carpeta psarc que está junto a este archivo.
@@ -73,3 +76,6 @@ letra = si
 # la púa de cada disco (Intro = lo de aquí, o lo que elegiste la última vez para ese disco).
 # Si nadie contesta en estos segundos, se usan los valores por defecto y la tanda arranca sola.
 espera_preguntas = 60
+
+# Buscar versiones nuevas al empezar y ofrecer instalarlas (si / no).
+buscar_actualizaciones = si

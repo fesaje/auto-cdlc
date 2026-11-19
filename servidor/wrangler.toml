@@ -1,0 +1,16 @@
+# Servidor de envíos de auto-cdlc (Cloudflare Workers + R2). Instrucciones en servidor/LEEME.md
+name = "auto-cdlc-envios"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "ENVIOS"
+bucket_name = "auto-cdlc-envios"
+
+# Límite de envíos por IP (30 por minuto). Si tu cuenta no lo admite, borra este bloque.
+[[ratelimits]]
+name = "LIMITE"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 30
+  period = 60

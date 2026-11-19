@@ -15,3 +15,11 @@ psarc/
 herramientas/cdlc-pack/*
 !herramientas/cdlc-pack/codigo/
 !herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt
+
+# servidor de envíos
+servidor/.wrangler/
+servidor/.dev.vars
+servidor/node_modules/
+envios/
+.instalacion
+procesar.bat.nuevo
