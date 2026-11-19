@@ -41,7 +41,8 @@ de `WwiseConsole.exe` en `configuracion.txt` (clave `wwise`).
    [última versión](https://github.com/fesaje/auto-cdlc/releases/latest).
 2. Descomprímelo en una carpeta tuya, por ejemplo `Documentos\auto-cdlc`. Mejor que no sea
    `Archivos de programa`, porque el programa escribe en su propia carpeta.
-3. Haz doble clic en **`instalar.bat`**. Hace cuatro cosas:
+3. Haz doble clic en **`instalar.bat`**. Primero pregunta el idioma (español o inglés) y después hace
+   cuatro cosas:
    1. instala `uv`, un gestor de Python que no toca el Python de tu sistema;
    2. prepara Python 3.13 y las librerías (alrededor de 1 GB la primera vez);
    3. comprueba que está `cdlc-pack`, el compilador de `.psarc`, y lo descarga si falta;

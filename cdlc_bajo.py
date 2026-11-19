@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = ""            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios

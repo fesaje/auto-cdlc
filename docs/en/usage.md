@@ -2,10 +2,22 @@
 
 **English** | [Español](../es/uso.md)
 
-The program's messages and `configuracion.txt` are in Spanish. Spanish terms are kept in `code` so you
-can recognise them.
+With `idioma = en` the program's menus, questions and reports are in English. The keys in
+`configuracion.txt` stay in Spanish (the comments are in English); the table below explains them.
 
 ## Processing songs
+
+Menus, questions and reports use the language chosen at install time (`idioma = es` or `en` in
+`configuracion.txt`).
+
+**Updates**: when it starts, the program checks whether a new version has been published. If so, it shows
+what's new and asks whether to update. The update:
+
+- doesn't touch your configuration, your songs or the downloaded models;
+- adds any new options to `configuracion.txt`;
+- relaunches the program with the new version.
+
+Unattended batches don't update. Turn it off with `buscar_actualizaciones = no` or `--sin-actualizar`.
 
 - **In batches:** put your songs (mp3, flac, wav, ogg, m4a…) in the **`entrada`** folder and double-click
   **`procesar.bat`**. You can keep adding songs there: the ones already processed are skipped.
@@ -20,11 +32,10 @@ can recognise them.
 3. **Songs that failed before**: if any songs gave an error in earlier batches (for example, interludes
    with no bass), it lists them and asks whether to retry. The default is no. Songs you don't retry are
    left out of the batch and nothing is asked about them.
-4. **Batch questions**: starting difficulty (`dificultad inicial`) and simplified arrangement
-   (`arreglo simplificado`).
-5. **Album questions**: bass tone (`tono_bajo`) and pick (`púa`: `auto`, `pua` or `dedos` = fingers).
-6. **Summary**: settings, albums, number of songs and estimated time. At the end, "¿Empezar? (s/n)"
-   ("Start? (y/n)").
+4. **Batch questions**: starting difficulty, simplified arrangement and whether you want to **send the
+   results** to help improve auto-cdlc (see below).
+5. **Album questions**: bass tone and pick (`auto`, `pick` or `fingers`).
+6. **Summary**: settings, albums, number of songs and estimated time. At the end, "Start? (y/n)".
 
 In every question, **Enter** keeps the value in brackets. That's the value in `configuracion.txt`, or
 whatever you chose last time for that album (saved in `salida\ajustes_discos.json`).
@@ -73,8 +84,11 @@ Each song takes about 4–5 minutes, depending on the computer.
 | `arreglo_simple` | `tiempo`, `medio`, `compas`, `corchea`, `no` | Simplified second arrangement. Asked for each batch. |
 | `letra` | `si` / `no` | On-screen lyrics from LRCLIB. |
 | `espera_preguntas` | seconds (60) | Time without an answer before starting with the defaults. |
+| `idioma` | `es` / `en` | Language of menus, questions and reports. Asked by `instalar.bat`. |
+| `buscar_actualizaciones` | `si` / `no` | Check for new versions when starting and offer to install them. |
+| `enviar_resultados` | `preguntar` (ask) / `si` / `no` | Voluntary sending of results (asked in every batch by default). |
 
-Command-line options: `--forzar` (redo songs already processed), `--sin-preguntas`, `--sin-psarc`,
+Command-line options: `--forzar` (redo songs already processed), `--sin-preguntas`, `--sin-actualizar`, `--sin-psarc`,
 `--sin-internet`, `--psarc FOLDER`, `--wwise PATH` and `--salida FOLDER`.
 
 ### Dynamic difficulty
@@ -126,6 +140,18 @@ Each note is held until the next one. It has its own dynamic difficulty and its 
 They're looked up on [LRCLIB](https://lrclib.net) and only used if the length matches your file
 (±2 s). LRCLIB gives the start time of each line: the words within the line are spread out
 approximately.
+
+### Sending results
+
+It's voluntary: you're asked in every batch, with "no" as the default. If you say yes, after each song
+this is sent:
+
+- the diagnostics, the report and the tab (the bass XML files);
+- the version, the system and the settings used;
+- an anonymous installation ID.
+
+The audio and the lyrics are never sent, and paths on your computer are removed before sending. It's
+about 10 KB per song. It helps find the cases where the program fails and improve it.
 
 ## What it detects on its own
 

@@ -41,7 +41,8 @@ auto-cdlc looks for it in `Program Files\Audiokinetic`. If you install it elsewh
    [latest release](https://github.com/fesaje/auto-cdlc/releases/latest).
 2. Unzip it into one of your own folders, for example `Documents\auto-cdlc`. Better not under
    `Program Files`, because the program writes into its own folder.
-3. Double-click **`instalar.bat`**. It does four things:
+3. Double-click **`instalar.bat`**. It first asks for the language (Spanish or English) and then does four
+   things:
    1. installs `uv`, a Python manager that doesn't touch your system's Python;
    2. sets up Python 3.13 and the libraries (about 1 GB the first time);
    3. checks that `cdlc-pack`, the `.psarc` builder, is there, and downloads it if missing;
@@ -67,7 +68,7 @@ auto-cdlc looks for it in `Program Files\Audiokinetic`. If you install it elsewh
 | Symptom | Fix |
 |---|---|
 | `instalar.bat` fails installing uv | Install it manually from <https://docs.astral.sh/uv/> and run `instalar.bat` again. |
-| "No encuentro uv" when processing | Close the window and open `procesar.bat` again. If it persists, run `instalar.bat` again. |
+| "uv not found" when processing | Close the window and open `procesar.bat` again. If it persists, run `instalar.bat` again. |
 | The report says "sin psarc … Wwise" | Wwise wasn't found: install it or put its path in `configuracion.txt`. Meanwhile you can build by hand with DLC Builder (see [usage](usage.md#building-or-editing-by-hand)). |
 | The song doesn't show up in the game | Check that the `.psarc` is in Rocksmith's `dlc` folder and that the CDLC Enabler is installed. |
 | The antivirus complains | It's usually about the CDLC Enabler or `cdlc-pack.exe` (an unsigned executable). Add an exception for those folders. |

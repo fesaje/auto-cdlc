@@ -17,8 +17,8 @@ Remastered. For each song you get:
 Everything runs locally with open-source models: no accounts, no per-song fees and your music is never
 uploaded anywhere.
 
-> **Note:** the program itself (prompts, reports and `configuracion.txt`) is in Spanish. This guide
-> explains everything you need to use it.
+> The program speaks English and Spanish: the installer asks which one you want. It also checks for new
+> versions and updates itself.
 
 ---
 

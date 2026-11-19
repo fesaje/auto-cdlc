@@ -7,6 +7,16 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.4.0**:
+  - English and Spanish interface: `instalar.bat` asks for the language (`idioma` in
+    `configuracion.txt`) and menus, questions, warnings, reports and logs use it. `configuracion.en.txt`
+    is the template with English comments.
+  - Updates: when it starts it checks for a new version and offers to install it without going to
+    GitHub. It doesn't touch the configuration, songs or models; it adds new options to
+    `configuracion.txt` and relaunches the program. `buscar_actualizaciones`, `--sin-actualizar`.
+  - Voluntary sending of results (diagnostics, report and tab; never audio or lyrics; no personal paths)
+    to a dedicated Cloudflare Workers + R2 server. Asked in every batch (`enviar_resultados`). Server code
+    and download script in `servidor/`.
 - **0.3.0**: first public release, now as **auto-cdlc**.
   - New documentation in English and Spanish: README, installation guide, usage guide, how it works and
     third-party licences.

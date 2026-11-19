@@ -17,6 +17,9 @@ el bajo en Rocksmith 2014 Remastered. Para cada canción se generan:
 Todo se calcula en local con modelos de código abierto: sin cuentas, sin pagar por canción y sin subir tu
 música a ningún sitio.
 
+> El programa habla español e inglés (lo pregunta el instalador), avisa cuando hay versiones nuevas y se
+> actualiza solo.
+
 ---
 
 ## Qué hace

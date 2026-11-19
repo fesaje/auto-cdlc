@@ -4,6 +4,19 @@
 
 ## Procesar canciones
 
+Los menús, las preguntas y los informes salen en el idioma elegido al instalar (`idioma = es` o `en` en
+`configuracion.txt`).
+
+**Actualizaciones**: al empezar, el programa mira si hay una versión nueva publicada. Si la hay, enseña
+las novedades y pregunta si actualizar. La actualización:
+
+- no toca tu configuración, tus canciones ni los modelos descargados;
+- añade a `configuracion.txt` las opciones nuevas, si las hay;
+- vuelve a lanzar el programa con la versión nueva.
+
+Si la tanda va desatendida, no se actualiza. Se desactiva con `buscar_actualizaciones = no` o
+`--sin-actualizar`.
+
 - **Por lotes:** mete las canciones (mp3, flac, wav, ogg, m4a…) en la carpeta **`entrada`** y haz doble
   clic en **`procesar.bat`**. Puedes ir dejando canciones ahí: las ya procesadas se saltan.
 - **Sueltas:** arrastra canciones o una carpeta encima de `procesar.bat`.
@@ -17,7 +30,8 @@
 3. **Fallidas de tandas anteriores**: si hay canciones que dieron error (por ejemplo, interludios sin
    bajo), las enseña y pregunta si reintentarlas. Por defecto no. Las que no se reintentan salen de la
    tanda y no se pregunta nada sobre ellas.
-4. **Preguntas de la tanda**: dificultad inicial y arreglo simplificado.
+4. **Preguntas de la tanda**: dificultad inicial, arreglo simplificado y si quieres **enviar los
+   resultados** para ayudar a mejorar auto-cdlc (ver más abajo).
 5. **Preguntas de cada disco**: tono del bajo y púa (`auto`, `pua` o `dedos`).
 6. **Resumen**: ajustes, discos, número de canciones y tiempo estimado. Al final, "¿Empezar? (s/n)".
 
@@ -68,8 +82,11 @@ Cada canción tarda unos 4–5 minutos, según el ordenador.
 | `arreglo_simple` | `tiempo`, `medio`, `compas`, `corchea`, `no` | Segundo arreglo simplificado. Se pregunta en cada tanda. |
 | `letra` | `si` / `no` | Letra en pantalla desde LRCLIB. |
 | `espera_preguntas` | segundos (60) | Tiempo sin respuesta antes de arrancar con los valores por defecto. |
+| `idioma` | `es` / `en` | Idioma de menús, preguntas e informes. Lo pregunta `instalar.bat`. |
+| `buscar_actualizaciones` | `si` / `no` | Buscar versiones nuevas al empezar y ofrecer instalarlas. |
+| `enviar_resultados` | `preguntar` / `si` / `no` | Envío voluntario de resultados (por defecto se pregunta en cada tanda). |
 
-Opciones de la línea de comandos: `--forzar` (repite canciones ya hechas), `--sin-preguntas`,
+Opciones de la línea de comandos: `--forzar` (repite canciones ya hechas), `--sin-preguntas`, `--sin-actualizar`,
 `--sin-psarc`, `--sin-internet`, `--psarc CARPETA`, `--wwise RUTA` y `--salida CARPETA`.
 
 ### Dificultad dinámica
@@ -121,6 +138,18 @@ Cada nota se mantiene hasta la siguiente. Tiene su propia dificultad dinámica y
 Se busca en [LRCLIB](https://lrclib.net) y solo se usa si la duración coincide con la de tu archivo
 (±2 s). LRCLIB da el momento en que empieza cada línea: las palabras de la línea se reparten de forma
 aproximada.
+
+### Envío de resultados
+
+Es voluntario: en cada tanda se pregunta, con "no" por defecto. Si dices que sí, al acabar cada canción
+se envía:
+
+- el diagnóstico, el informe y la tablatura (los XML del bajo);
+- la versión, el sistema y la configuración usada;
+- un identificador anónimo de la instalación.
+
+Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan antes de enviar. Son unos
+10 KB por canción. Sirve para encontrar los casos en los que falla y mejorar el programa.
 
 ## Lo que detecta solo
 
