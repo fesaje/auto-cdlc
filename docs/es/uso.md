@@ -141,8 +141,8 @@ aproximada.
 
 ### Envío de resultados
 
-Es voluntario: en cada tanda se pregunta, con "no" por defecto. Si dices que sí, al acabar cada canción
-se envía:
+Es voluntario: en cada tanda se pregunta. Intro equivale a "sí", pero si nadie contesta (tanda
+desatendida) no se envía nada. Si dices que sí, al acabar cada canción se envía:
 
 - el diagnóstico, el informe y la tablatura (los XML del bajo);
 - la versión, el sistema y la configuración usada;

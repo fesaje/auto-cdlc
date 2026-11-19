@@ -7,6 +7,8 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
+- **0.4.1**: en la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda
+  desatendida), no se envía nada.
 - **0.4.0**:
   - Interfaz en español e inglés: `instalar.bat` pregunta el idioma (`idioma` en `configuracion.txt`) y
     menús, preguntas, avisos, informes y registro salen en ese idioma. `configuracion.en.txt` es la

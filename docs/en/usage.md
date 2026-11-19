@@ -143,8 +143,8 @@ approximately.
 
 ### Sending results
 
-It's voluntary: you're asked in every batch, with "no" as the default. If you say yes, after each song
-this is sent:
+It's voluntary: you're asked in every batch. Enter means "yes", but if nobody answers (unattended batch)
+nothing is sent. If you say yes, after each song this is sent:
 
 - the diagnostics, the report and the tab (the bass XML files);
 - the version, the system and the settings used;

@@ -7,6 +7,8 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.4.1**: in the question about sending results, Enter means "yes". If nobody answers (unattended
+  batch), nothing is sent.
 - **0.4.0**:
   - English and Spanish interface: `instalar.bat` asks for the language (`idioma` in
     `configuracion.txt`) and menus, questions, warnings, reports and logs use it. `configuracion.en.txt`

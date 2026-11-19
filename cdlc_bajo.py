@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
@@ -2464,8 +2464,9 @@ def planificar(archivos, salida, forzar, preguntar):
               "(diagnóstico, informe y tablatura de cada canción), nunca el audio ni la letra, y sin rutas personales.",
               "\nYou can send this batch's results to help improve auto-cdlc. Only data is sent (diagnostics,\n"
               "report and tab of each song), never the audio or the lyrics, and without personal paths."))
-        ENVIAR = si_no(preguntar(T("¿Enviar los resultados? (s/n)", "Send the results? (y/n)"), "n",
-                                 lambda x: x.lower()[:1] in "syn"))
+        # Intro = sí; pero si nadie contesta (tanda desatendida) no se envía nada sin permiso
+        ENVIAR = si_no(preguntar(T("¿Enviar los resultados? (s/n)", "Send the results? (y/n)"), T("s", "y"),
+                                 lambda x: x.lower()[:1] in "syn")) and not preguntar.desatendido
     else:
         ENVIAR = bool(ENVIOS_URL) and not SIN_INTERNET and modo_envio == "si"
     # ---- preguntas de cada disco ----
