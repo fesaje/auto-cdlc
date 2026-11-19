@@ -38,7 +38,7 @@ AQUI = Path(__file__).resolve().parent
 VERSION = "0.4.0"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
-ENVIOS_URL = ""            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
+ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
 CONF_ENVIO = "preguntar"
 ENVIAR = False             # se decide en cada tanda (enviar_resultados = preguntar / si / no)
 SIN_INTERNET = False      # --sin-internet o configuracion.txt
