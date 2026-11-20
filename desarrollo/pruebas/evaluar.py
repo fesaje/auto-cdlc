@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 sys.argv, ARGS = ["x"], sys.argv[1:]
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import cdlc_bajo as c  # noqa: E402
 
 TOL = 0.05

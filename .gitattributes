@@ -3,3 +3,4 @@
 configuracion.txt text eol=crlf
 *.whl binary
 configuracion.en.txt text eol=crlf
+desarrollo/ export-ignore

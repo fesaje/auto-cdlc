@@ -7,8 +7,13 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
-- **0.4.1**: in the question about sending results, Enter means "yes". If nobody answers (unattended
-  batch), nothing is sent.
+- **0.4.1**:
+  - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
+    nothing is sent.
+  - Developer tools (results server, download script and test bench) move to `desarrollo/`: still in the
+    repository but no longer in the package or in updates.
+  - Results server: optional Telegram notification for each song received. The download script asks for
+    the token without showing it, because typed on the command line it broke with `&` or `%`.
 - **0.4.0**:
   - English and Spanish interface: `instalar.bat` asks for the language (`idioma` in
     `configuracion.txt`) and menus, questions, warnings, reports and logs use it. `configuracion.en.txt`
@@ -18,7 +23,7 @@ files: code, configuration, README and installers.
     `configuracion.txt` and relaunches the program. `buscar_actualizaciones`, `--sin-actualizar`.
   - Voluntary sending of results (diagnostics, report and tab; never audio or lyrics; no personal paths)
     to a dedicated Cloudflare Workers + R2 server. Asked in every batch (`enviar_resultados`). Server code
-    and download script in `servidor/`.
+    and download script in `desarrollo/` (repository only).
 - **0.3.0**: first public release, now as **auto-cdlc**.
   - New documentation in English and Spanish: README, installation guide, usage guide, how it works and
     third-party licences.

@@ -17,9 +17,9 @@ herramientas/cdlc-pack/*
 !herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt
 
 # servidor de envíos
-servidor/.wrangler/
-servidor/.dev.vars
-servidor/node_modules/
-envios/
+desarrollo/servidor/.wrangler/
+desarrollo/servidor/.dev.vars
+desarrollo/servidor/node_modules/
+desarrollo/envios/
 .instalacion
 procesar.bat.nuevo

@@ -96,7 +96,7 @@ licence):
 
 ## Test bench
 
-`pruebas/` contains a generator of synthetic songs with a known answer, and an evaluator. The generator
+`desarrollo/pruebas/` (in the repository, not in the download package) contains a generator of synthetic songs with a known answer, and an evaluator. The generator
 makes bass, drums and accompaniment, with odd bars, syncopation, repeated notes and 3/4 bars. The
 evaluator measures, against that answer:
 
@@ -106,6 +106,6 @@ evaluator measures, against that answer:
 - beat and downbeat F1.
 
 ```
-uv run python pruebas/sintetico.py FOLDER        # generates the cases
-uv run python pruebas/evaluar.py FOLDER todo      # evaluates them
+uv run python desarrollo/pruebas/sintetico.py FOLDER        # generates the cases
+uv run python desarrollo/pruebas/evaluar.py FOLDER todo      # evaluates them
 ```

@@ -16,7 +16,29 @@ function esAdmin(request, env) {
   return env.ADMIN_TOKEN && auth === `Bearer ${env.ADMIN_TOKEN}`;
 }
 
-async function recibir(request, env) {
+// Aviso por Telegram de cada envío (opcional: secretos TELEGRAM_TOKEN y TELEGRAM_CHAT_ID)
+async function avisarTelegram(env, datos, clave) {
+  if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+  const c = datos.cancion || {};
+  const ok = c.estado === "ok";
+  const texto = [
+    `${ok ? "🎸" : "⚠️"} auto-cdlc ${datos.version || "?"} · ${ok ? "OK" : "ERROR"}`,
+    String(c.archivo || "?").slice(0, 200),
+    String(c.resumen || "").slice(0, 300),
+    `instalación ${String(datos.instalacion || "?").slice(0, 8)} · ${datos.idioma || "?"}`,
+  ].filter(Boolean).join("\n");
+  try {
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: texto, disable_web_page_preview: true }),
+    });
+  } catch (e) {
+    // si Telegram falla, el envío ya está guardado: no pasa nada
+  }
+}
+
+async function recibir(request, env, ctx) {
   const ip = request.headers.get("cf-connecting-ip") || "desconocida";
   if (env.LIMITE) {
     const { success } = await env.LIMITE.limit({ key: ip });
@@ -52,6 +74,7 @@ async function recibir(request, env) {
       estado: String((datos.cancion || {}).estado || "").slice(0, 20),
     },
   });
+  ctx.waitUntil(avisarTelegram(env, datos, clave));
   return json({ ok: true, clave });
 }
 
@@ -68,9 +91,9 @@ async function listar(url, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === "/envio") return recibir(request, env);
+    if (request.method === "POST" && url.pathname === "/envio") return recibir(request, env, ctx);
     if (request.method === "GET" && url.pathname === "/") {
       return new Response("auto-cdlc: servidor de envíos en marcha\n");
     }

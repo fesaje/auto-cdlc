@@ -98,7 +98,7 @@ iminashi (licencia MIT):
 
 ## Banco de pruebas
 
-En `pruebas/` hay un generador de canciones sintéticas con la solución conocida y un evaluador. El
+En `desarrollo/pruebas/` (en el repositorio, no en el paquete de descarga) hay un generador de canciones sintéticas con la solución conocida y un evaluador. El
 generador hace bajo, batería y acompañamiento, con compases irregulares, síncopas, notas repetidas y
 compases de 3/4. El evaluador mide, frente a esa solución:
 
@@ -108,6 +108,6 @@ compases de 3/4. El evaluador mide, frente a esa solución:
 - F1 de pulsos y de tiempos 1.
 
 ```
-uv run python pruebas/sintetico.py CARPETA        # genera los casos
-uv run python pruebas/evaluar.py CARPETA todo      # los evalúa
+uv run python desarrollo/pruebas/sintetico.py CARPETA        # genera los casos
+uv run python desarrollo/pruebas/evaluar.py CARPETA todo      # los evalúa
 ```

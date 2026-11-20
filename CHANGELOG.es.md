@@ -7,8 +7,13 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
-- **0.4.1**: en la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda
-  desatendida), no se envía nada.
+- **0.4.1**:
+  - En la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda desatendida),
+    no se envía nada.
+  - Las herramientas de desarrollo (servidor de envíos, script de descarga y banco de pruebas) pasan a
+    `desarrollo/`: siguen en el repositorio pero ya no van en el paquete ni en las actualizaciones.
+  - Servidor de envíos: aviso opcional por Telegram de cada canción recibida. El script de descarga pide
+    el token sin mostrarlo, porque escrito en la línea de comandos se rompía con `&` o `%`.
 - **0.4.0**:
   - Interfaz en español e inglés: `instalar.bat` pregunta el idioma (`idioma` en `configuracion.txt`) y
     menús, preguntas, avisos, informes y registro salen en ese idioma. `configuracion.en.txt` es la
@@ -18,7 +23,7 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     `configuracion.txt` y vuelve a lanzar el programa. `buscar_actualizaciones`, `--sin-actualizar`.
   - Envío voluntario de resultados (diagnóstico, informe y tablatura; nunca audio ni letra; sin rutas
     personales) a un servidor propio en Cloudflare Workers + R2. Se pregunta en cada tanda
-    (`enviar_resultados`). Código del servidor y script de descarga en `servidor/`.
+    (`enviar_resultados`). Código del servidor y script de descarga en `desarrollo/` (solo en el repositorio).
 - **0.3.0**: primera versión publicada, ahora como **auto-cdlc**.
   - Documentación nueva en inglés y español: README, guía de instalación, guía de uso, funcionamiento por dentro y licencias
     de terceros.
