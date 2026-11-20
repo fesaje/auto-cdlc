@@ -7,6 +7,8 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.4.2**: the time estimate before starting is shown in hours, minutes and seconds (e.g.
+  "about 20 min 48 s (5 min 12 s per song)").
 - **0.4.1**:
   - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
     nothing is sent.

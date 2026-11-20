@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
@@ -2386,6 +2386,18 @@ def tono_valido(v):
         or base_tonos() is None
 
 
+def duracion_txt(seg):
+    """Duración legible: '1 h 5 min', '20 min 48 s', '45 s' (con horas no se muestran segundos)."""
+    seg = max(0, int(round(seg)))
+    h, resto = divmod(seg, 3600)
+    m, s = divmod(resto, 60)
+    if h:
+        return f"{h} h {m} min" if m else f"{h} h"
+    if m:
+        return f"{m} min {s} s" if s else f"{m} min"
+    return f"{s} s"
+
+
 def planificar(archivos, salida, forzar, preguntar):
     """Pendientes agrupados por artista > disco, preguntas de la tanda y de cada disco, y resumen.
     Devuelve la lista [(archivo, ajustes del disco)] en orden, o None si se cancela."""
@@ -2502,7 +2514,7 @@ def planificar(archivos, salida, forzar, preguntar):
     saltadas = [] if reintentar else fallaron
     estimado = seg_cancion is None
     seg_cancion = seg_cancion or 270.0
-    horas = len(cola) * seg_cancion / 3600
+    total = len(cola) * seg_cancion
     log("\n" + "=" * 70 + "\n" + T("RESUMEN DE LA TANDA", "BATCH SUMMARY") + "\n" + "=" * 70)
     log(T(f"Dificultad inicial: {DD_INICIAL:.0f} % | arreglo simplificado: {NOMBRES_SIMPLE.get(ARREGLO_SIMPLE, 'no')} | "
           f"letra: {'si' if LETRA else 'no'} | velocidad de scroll: {('auto ' if VELOCIDAD_AUTO else '') + str(VELOCIDAD_SCROLL)}",
@@ -2519,9 +2531,9 @@ def planificar(archivos, salida, forzar, preguntar):
     if saltadas:
         log(T(f"Se saltan {len(saltadas)} que fallaron antes; {hechas} ya estaban hechas.",
               f"Skipping {len(saltadas)} that failed before; {hechas} were already done."))
-    log(T(f"A procesar: {len(cola)} {'canción' if len(cola) == 1 else 'canciones'}, unas {horas:.1f} h ({seg_cancion / 60:.1f} min por canción"
+    log(T(f"A procesar: {len(cola)} {'canción' if len(cola) == 1 else 'canciones'}, unos {duracion_txt(total)} ({duracion_txt(seg_cancion)} por canción"
           + (", aproximado)." if estimado else " en tus tandas anteriores)."),
-          f"To process: {len(cola)} {'song' if len(cola) == 1 else 'songs'}, about {horas:.1f} h ({seg_cancion / 60:.1f} min per song"
+          f"To process: {len(cola)} {'song' if len(cola) == 1 else 'songs'}, about {duracion_txt(total)} ({duracion_txt(seg_cancion)} per song"
           + (", approximate)." if estimado else " in your earlier batches).")))
     if not cola:
         return []
