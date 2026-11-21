@@ -7,8 +7,13 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
-- **0.4.2**: la estimación de tiempo antes de empezar se muestra en horas, minutos y segundos (por
-  ejemplo, "unos 20 min 48 s (5 min 12 s por canción)").
+- **0.4.2**:
+  - La estimación de tiempo antes de empezar se muestra en horas, minutos y segundos (por ejemplo,
+    "unos 20 min 48 s (5 min 12 s por canción)").
+  - Wwise se encuentra en cualquier unidad: por `WWISEROOT` aunque la carpeta no lleve el año, y la clave
+    `wwise` acepta la carpeta de Wwise además de `WwiseConsole.exe`. Si falta, avisa antes de empezar.
+  - Las canciones que terminan sin `.psarc` se cuentan y se listan aparte en el resumen final, con el
+    motivo, en vez de parecer un "OK" normal.
 - **0.4.1**:
   - En la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda desatendida),
     no se envía nada.

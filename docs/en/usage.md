@@ -73,7 +73,7 @@ Each song takes about 4–5 minutes, depending on the computer.
 | `carpeta_psarc` | path | Where to save the `.psarc` files. Empty: the program's `psarc` folder. |
 | `compilar_psarc` | `si` / `no` | With `no`, only the `.rs2dlc` project is created. |
 | `buscar_caratulas` | `si` / `no` | With `no` it never goes online: no album art, official tones or lyrics. |
-| `wwise` | path | Path to `WwiseConsole.exe`, only if it isn't found automatically. |
+| `wwise` | path | Wwise folder or path to `WwiseConsole.exe`, only if it isn't found automatically (it checks Program Files and `WWISEROOT`). |
 | `umbral_cents` | number (30) | Minimum deviation of the recording from A = 440 before the *Tuning Pitch* is changed. |
 | `dificultad` | `propia` / `dlcbuilder` / `ninguna` | Type of dynamic difficulty (see below). |
 | `dificultad_inicial` | 0–95 | % of notes each phrase starts with. Asked for each batch. |

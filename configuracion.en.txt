@@ -15,7 +15,8 @@ compilar_psarc = si
 # Look up album art online (iTunes / Deezer). With "no" nothing goes online: no art, official tones or lyrics.
 buscar_caratulas = si
 
-# Path to WwiseConsole.exe. It's usually found automatically; fill it in only if there's an error.
+# Wwise: its folder or the path to WwiseConsole.exe. It's usually found automatically (Program Files or
+# the WWISEROOT variable); fill it in only if it isn't, for example if it's on another drive.
 # Example: wwise = C:\Program Files (x86)\Audiokinetic\Wwise 2021.1.14.8108\Authoring\x64\Release\bin\WwiseConsole.exe
 wwise =
 

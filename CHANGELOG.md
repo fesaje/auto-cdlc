@@ -7,8 +7,13 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
-- **0.4.2**: the time estimate before starting is shown in hours, minutes and seconds (e.g.
-  "about 20 min 48 s (5 min 12 s per song)").
+- **0.4.2**:
+  - The time estimate before starting is shown in hours, minutes and seconds (e.g. "about 20 min 48 s
+    (5 min 12 s per song)").
+  - Wwise is found on any drive: through `WWISEROOT` even if the folder name has no year, and the `wwise`
+    key accepts the Wwise folder as well as `WwiseConsole.exe`. If it's missing, it warns before starting.
+  - Songs that end without a `.psarc` are counted and listed apart in the final summary, with the reason,
+    instead of looking like a normal "OK".
 - **0.4.1**:
   - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
     nothing is sent.

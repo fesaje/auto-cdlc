@@ -46,6 +46,7 @@ DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan la
 COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
+SIN_PSARC = []   # canciones de la tanda que terminaron sin .psarc: (archivo, motivo)
 ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
 PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
 UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
@@ -2154,6 +2155,8 @@ def procesar(ruta, salida, forzar):
             (T(f" | {len(irregulares)} compases irregulares", f" | {len(irregulares)} odd bars") if irregulares else "")
     if problemas:
         aviso += T("  ¡OJO! el proyecto tiene problemas, mira el informe", "  CAREFUL! the project has problems, see the report")
+    if COMPILAR and not psarcs:
+        SIN_PSARC.append((ruta.name, error_psarc))
     extra += " | psarc OK" if psarcs else (T(" | sin psarc: ", " | no psarc: ") + f"{error_psarc}" if COMPILAR else "")
     resumen = T(f"{n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%", f"{n_gp} notes, {bpm:.0f} BPM, doubtful {ambiguas*100:.0f}%") + f"{extra}{aviso}"
     log(f"  OK: {resumen}")
@@ -2179,6 +2182,28 @@ def ruta_cdlc_pack():
     if os.environ.get("CDLC_PACK"):
         return Path(os.environ["CDLC_PACK"])
     return AQUI / "herramientas" / "cdlc-pack" / ("cdlc-pack.exe" if os.name == "nt" else "cdlc-pack")
+
+
+WWISE_SUBRUTA = Path("Authoring") / "x64" / "Release" / "bin" / "WwiseConsole.exe"
+
+
+def buscar_wwise(configurado=None):
+    """Ruta a WwiseConsole.exe. Acepta en configuración el .exe o la carpeta de Wwise; si no hay,
+    prueba WWISEROOT (en cualquier unidad y aunque la carpeta no lleve el año, que cdlc-pack
+    exige) y las carpetas habituales de Program Files. None si no se encuentra."""
+    candidatas = []
+    for base in (configurado, os.environ.get("WWISEROOT")):
+        if base:
+            b = Path(base.strip().strip('"'))
+            candidatas += [b, b / WWISE_SUBRUTA]
+    for pf in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")):
+        if pf and (Path(pf) / "Audiokinetic").is_dir():
+            for d in sorted((Path(pf) / "Audiokinetic").glob("Wwise*"), reverse=True):
+                candidatas.append(d / WWISE_SUBRUTA)
+    for c in candidatas:
+        if c.is_file() and c.name.lower() == "wwiseconsole.exe":
+            return str(c)
+    return None
 
 
 def compilar_psarc(proyecto, carpeta, wwise=None):
@@ -2257,8 +2282,13 @@ class Registro:
         self._guardar()
 
     def cerrar(self, ok, errores):
-        self.final = T(f"Terminado: {ok} bien, {errores} con error, en {(time.time() - self.inicio) / 60:.1f} min\n",
-                       f"Finished: {ok} OK, {errores} with errors, in {(time.time() - self.inicio) / 60:.1f} min\n")
+        sin = len(SIN_PSARC)
+        self.final = T(f"Terminado: {ok} bien" + (f" ({sin} sin .psarc)" if sin else "")
+                       + f", {errores} con error, en {(time.time() - self.inicio) / 60:.1f} min\n",
+                       f"Finished: {ok} OK" + (f" ({sin} without .psarc)" if sin else "")
+                       + f", {errores} with errors, in {(time.time() - self.inicio) / 60:.1f} min\n")
+        for n, e in SIN_PSARC:
+            self.final += T(f"  sin .psarc: {n}: {e}\n", f"  no .psarc: {n}: {e}\n")
         self._guardar()
 
     def _guardar(self):
@@ -2769,7 +2799,11 @@ def main():
         log(T("Aviso: umbral_cents o dificultad_inicial no es un número en configuracion.txt; reviso los valores por defecto",
               "Warning: umbral_cents or dificultad_inicial is not a number in configuracion.txt; using the defaults"))
     CARPETA_PSARC = Path(a.psarc or conf.get("carpeta_psarc") or (AQUI / "psarc"))
-    WWISE = a.wwise or conf.get("wwise") or None
+    configurado = a.wwise or conf.get("wwise") or None
+    WWISE = buscar_wwise(configurado)
+    if configurado and not WWISE:
+        log(T(f"Aviso: la ruta de Wwise de la configuración no existe o no contiene WwiseConsole.exe: {configurado}",
+              f"Warning: the Wwise path in the configuration doesn't exist or has no WwiseConsole.exe: {configurado}"))
     COMPILAR = not (a.sin_psarc or conf.get("compilar_psarc", "si").lower() in ("no", "false", "0"))
     SIN_INTERNET = a.sin_internet or conf.get("buscar_caratulas", "si").lower() in ("no", "false", "0")
     if COMPILAR and not ruta_cdlc_pack().exists():
@@ -2778,6 +2812,11 @@ def main():
         COMPILAR = False
     if COMPILAR:
         CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt" and not WWISE:
+            log(T("AVISO: no encuentro Wwise (WwiseConsole.exe), así que no se podrán crear los .psarc.\n"
+                  "  Pon en configuracion.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
+                  "WARNING: Wwise (WwiseConsole.exe) not found, so the .psarc files can't be built.\n"
+                  "  Set the wwise key in configuracion.txt to the Wwise folder or to WwiseConsole.exe."))
     espera = 60
     try:
         espera = int(conf.get("espera_preguntas", 60))
@@ -2847,10 +2886,21 @@ def main():
             registro.cancion(i, r, "error", str(ex), time.time() - t0, None, traza)
             enviar_cancion(r, "error", str(ex), carpeta if carpeta.is_dir() else None, traza)
     registro.cerrar(ok, len(fallos))
-    log(T(f"\nTerminado: {ok} bien, {len(fallos)} con error. Resultados en: {salida}",
-          f"\nFinished: {ok} OK, {len(fallos)} with errors. Results in: {salida}"))
+    sin = len(SIN_PSARC)
+    log(T(f"\nTerminado: {ok} bien" + (f" ({sin} sin .psarc)" if sin else "") + f", {len(fallos)} con error. Resultados en: {salida}",
+          f"\nFinished: {ok} OK" + (f" ({sin} without .psarc)" if sin else "") + f", {len(fallos)} with errors. Results in: {salida}"))
     for n, e in fallos:
         log(f"  - {n}: {e}")
+    if sin:
+        log(T("Sin .psarc (los archivos para editar sí están en su carpeta):",
+              "No .psarc (the editable files are still in each song's folder):"))
+        for n, e in SIN_PSARC:
+            log(f"  - {n}: {e}")
+        if any("wwise" in (e or "").lower() for _, e in SIN_PSARC):
+            log(T("  -> Parece un problema con Wwise: pon su carpeta o la ruta de WwiseConsole.exe en configuracion.txt\n"
+                  "     (clave wwise) y repite esas canciones con --forzar.",
+                  "  -> Looks like a Wwise problem: set its folder or the path to WwiseConsole.exe in configuracion.txt\n"
+                  "     (wwise key) and redo those songs with --forzar."))
     log(T(f"Registro de esta tanda (el que me puedes pasar): {registro.ruta.name}",
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:

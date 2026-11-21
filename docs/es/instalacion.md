@@ -32,8 +32,9 @@ Es el mismo que usa DLC Builder.
 1. Descarga el instalador desde <https://ignition4.customsforge.com/tools/wwise>
 2. Instala la versión 2019, 2021, 2022 o 2023, con las opciones por defecto.
 
-auto-cdlc lo busca solo en `Archivos de programa\Audiokinetic`. Si lo instalas en otro sitio, pon la ruta
-de `WwiseConsole.exe` en `configuracion.txt` (clave `wwise`).
+auto-cdlc lo busca solo en `Archivos de programa\Audiokinetic` y en la variable `WWISEROOT` (la crea el
+instalador de Wwise). Si aun así no lo encuentra, pon la carpeta de Wwise o la ruta de `WwiseConsole.exe`
+en `configuracion.txt` (clave `wwise`).
 
 ## 2. auto-cdlc
 

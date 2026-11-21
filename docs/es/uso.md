@@ -71,7 +71,7 @@ Cada canción tarda unos 4–5 minutos, según el ordenador.
 | `carpeta_psarc` | ruta | Dónde dejar los `.psarc`. Vacío: carpeta `psarc` del programa. |
 | `compilar_psarc` | `si` / `no` | Con `no` solo se genera el proyecto `.rs2dlc`. |
 | `buscar_caratulas` | `si` / `no` | Con `no` no se conecta a internet: sin carátulas, tonos oficiales ni letra. |
-| `wwise` | ruta | Ruta de `WwiseConsole.exe`, solo si no lo encuentra solo. |
+| `wwise` | ruta | Carpeta de Wwise o ruta de `WwiseConsole.exe`, solo si no lo encuentra solo (mira Program Files y `WWISEROOT`). |
 | `umbral_cents` | número (30) | Desvío mínimo de la grabación respecto a La = 440 para cambiar el *Tuning Pitch*. |
 | `dificultad` | `propia` / `dlcbuilder` / `ninguna` | Tipo de dificultad dinámica (ver abajo). |
 | `dificultad_inicial` | 0–95 | % de notas con que empieza cada frase. Se pregunta en cada tanda. |

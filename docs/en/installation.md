@@ -32,8 +32,9 @@ It's the same one DLC Builder uses.
 1. Download the installer from <https://ignition4.customsforge.com/tools/wwise>
 2. Install version 2019, 2021, 2022 or 2023 with the default options.
 
-auto-cdlc looks for it in `Program Files\Audiokinetic`. If you install it elsewhere, put the path to
-`WwiseConsole.exe` in `configuracion.txt` (key `wwise`).
+auto-cdlc looks for it in `Program Files\Audiokinetic` and in the `WWISEROOT` variable (the Wwise installer
+sets it). If it still isn't found, put the Wwise folder or the path to `WwiseConsole.exe` in
+`configuracion.txt` (key `wwise`).
 
 ## 2. auto-cdlc
 

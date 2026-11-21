@@ -14,7 +14,8 @@ compilar_psarc = si
 # Buscar las carátulas en internet (iTunes / Deezer).
 buscar_caratulas = si
 
-# Ruta a WwiseConsole.exe. Normalmente se encuentra sola; rellénala solo si da error.
+# Wwise: su carpeta o la ruta a WwiseConsole.exe. Normalmente se encuentra solo (Program Files o la
+# variable WWISEROOT); rellénalo solo si no lo encuentra, por ejemplo si está en otra unidad.
 # Ejemplo: wwise = C:\Program Files (x86)\Audiokinetic\Wwise 2021.1.14.8108\Authoring\x64\Release\bin\WwiseConsole.exe
 wwise =
 
