@@ -3019,6 +3019,7 @@ def main():
         f"{k[0]} > {k[1]} (tono {aj['tono']}, púa {aj['pua']})"
         for k, aj in dict((k, aj) for _, k, aj in cola).items()) + "\n"
     ok, fallos, sin_bajo = 0, [], []
+    rutas_ok, rutas_descartadas = [], []
     for i, (r, disco, aj) in enumerate(cola, 1):
         TONO_MODO = aj["tono"]
         PUA_FORZADA = {"pua": True, "dedos": False}.get(aj["pua"])
@@ -3027,11 +3028,13 @@ def main():
         try:
             estado, resumen = procesar(r, salida, True)
             ok += estado == "ok"
+            if estado == "ok" and not any(n == r.name for n, _ in SIN_PSARC):
+                rutas_ok.append(r)
             registro.cancion(i, r, estado, resumen, time.time() - t0, destino(r, salida)[1] / "informe.txt")
             if estado == "ok":
                 enviar_cancion(r, estado, resumen, destino(r, salida)[1])
         except SinBajo as ex:
-            sin_bajo.append(r.name); log(f"  {T('SIN BAJO', 'NO BASS')}: {ex}")
+            sin_bajo.append(r.name); rutas_descartadas.append(r); log(f"  {T('SIN BAJO', 'NO BASS')}: {ex}")
             carpeta = destino(r, salida)[1]
             if carpeta.is_dir() and not any(carpeta.iterdir()):
                 carpeta.rmdir()
@@ -3040,7 +3043,7 @@ def main():
         except Exception as ex:
             import traceback
             primera = str(ex).strip().splitlines()[0] if str(ex).strip() else type(ex).__name__
-            fallos.append((r.name, primera)); log(f"  ERROR: {primera}")
+            fallos.append((r.name, primera)); rutas_descartadas.append(r); log(f"  ERROR: {primera}")
             try:
                 carpeta = destino(r, salida)[1]
             except Exception:
@@ -3079,6 +3082,39 @@ def main():
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:
         log(T(f"Los .psarc están en: {CARPETA_PSARC}", f"The .psarc files are in: {CARPETA_PSARC}"))
+    mover_entradas(preguntas, rutas_ok, rutas_descartadas)
+
+
+def mover_entradas(preguntar, hechas, descartadas):
+    """Ofrece sacar de la carpeta de entrada lo ya procesado (a 'procesadas') y lo que dio error o no tenía
+    bajo (a 'descartadas'). Se mueve, no se borra: para repetir una canción con --forzar hace falta el
+    audio. Las subcarpetas no se leen al buscar pendientes. Por defecto no se mueve nada."""
+    if not hechas and not descartadas:
+        return
+    try:
+        if not si_no(preguntar(T(f"\n¿Sacar de la entrada los archivos de esta tanda? {len(hechas)} a 'procesadas', "
+                                 f"{len(descartadas)} a 'descartadas' (s/n)",
+                                 f"\nMove this batch's files out of the input? {len(hechas)} to 'procesadas', "
+                                 f"{len(descartadas)} to 'descartadas' (y/n)"), "n",
+                               lambda x: x.lower()[:1] in "syn")) or preguntar.desatendido:
+            return
+    except Exception:
+        return
+    movidas = 0
+    for rutas, sub in ((hechas, "procesadas"), (descartadas, "descartadas")):
+        for r in rutas:
+            try:
+                dest_dir = r.parent / sub
+                dest_dir.mkdir(exist_ok=True)
+                dest = dest_dir / r.name
+                k = 2
+                while dest.exists():
+                    dest = dest_dir / f"{r.stem} ({k}){r.suffix}"; k += 1
+                shutil.move(str(r), str(dest)); movidas += 1
+            except Exception as ex:
+                log(T(f"  No se pudo mover {r.name}: {ex}", f"  Couldn't move {r.name}: {ex}"))
+    log(T(f"Movidos {movidas} archivos (subcarpetas 'procesadas' y 'descartadas' de la entrada).",
+          f"Moved {movidas} files (subfolders 'procesadas' and 'descartadas' of the input)."))
 
 
 if __name__ == "__main__":

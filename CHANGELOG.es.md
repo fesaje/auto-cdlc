@@ -26,6 +26,8 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
   - El diagnóstico guarda dónde caen las notas dentro de cada tiempo, para estudiar swing y tresillos.
   - Cuando el tiempo 1 es dudoso, los compases se corren para empezar en el tiempo en el que más cambia de
     nota el bajo (suele cambiar con el acorde, en el 1).
+  - Al final de cada tanda ofrece sacar sus archivos de `entrada`: los procesados a `entrada\procesadas` y
+    los que dieron error o no tenían bajo a `entrada\descartadas`. No se borra nada y por defecto es que no.
 - **0.4.1**:
   - En la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda desatendida),
     no se envía nada.

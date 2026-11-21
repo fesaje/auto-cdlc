@@ -26,6 +26,9 @@ files: code, configuration, README and installers.
   - The diagnostics record where notes fall inside each beat, to study swing and triplets.
   - When the downbeat is doubtful, the bars are moved to start on the beat where the bass changes note most
     often (it usually changes with the chord, on beat 1).
+  - At the end of a batch it offers to move its files out of `entrada`: processed ones to
+    `entrada\procesadas`, errors and songs with no bass to `entrada\descartadas`. Nothing is deleted
+    and the default is no.
 - **0.4.1**:
   - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
     nothing is sent.
