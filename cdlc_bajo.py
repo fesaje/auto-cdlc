@@ -610,6 +610,47 @@ def construir_grid(beats, act, duracion, act_alt=None):
     return grid, barras, 60 / med, conf, irregulares, metro
 
 
+def fase_por_bajo(grid, barras, metro, notas, conf, umbral_conf=0.7, margen=0.15, minimo=30):
+    """Cuando el tiempo 1 es dudoso, mira en qué tiempo del compás cambia de nota el bajo: casi siempre
+    cambia en el 1 (con el acorde). Si otro tiempo gana con claridad, se corren los compases para que
+    empiecen ahí. Devuelve (grid, barras, tiempos_corridos, info)."""
+    grid = np.asarray(grid, dtype=float); barras = np.asarray(barras)
+    info = {"aplicada": False}
+    if conf >= umbral_conf or metro < 2:
+        return grid, barras, 0, info
+    notas = sorted(notas)
+    inicios = np.array([n[0] for n in notas])
+
+    def nota_en(t):
+        k = int(np.searchsorted(inicios, t + 0.06)) - 1
+        while k >= 0 and notas[k][1] <= t:
+            k -= 1
+        return notas[k][2] % 12 if k >= 0 and notas[k][1] > t else None
+    pcs = [nota_en(t) for t in grid]
+    fase = np.full(len(grid), -1)
+    for a, b in zip(barras[:-1], barras[1:]):
+        if b - a == metro:
+            fase[a:b] = np.arange(metro)
+    cambios, total = np.zeros(metro), np.zeros(metro)
+    for k in range(1, len(grid)):
+        if fase[k] >= 0 and pcs[k] is not None and pcs[k - 1] is not None:
+            total[fase[k]] += 1; cambios[fase[k]] += pcs[k] != pcs[k - 1]
+    if total.min() < minimo:
+        return grid, barras, 0, info
+    tasa = cambios / total
+    info.update({"cambios_por_tiempo": [round(float(x), 2) for x in tasa]})
+    s = int(np.argmax(tasa))
+    if s == 0 or tasa[s] - tasa[0] < margen:
+        return grid, barras, 0, info
+    # los compases pasan a empezar en el tiempo s: se añaden (metro - s) tiempos delante y s detrás
+    med = float(np.median(np.diff(grid)))
+    e = metro - s
+    grid = np.concatenate([grid[0] - med * np.arange(e, 0, -1), grid, grid[-1] + med * np.arange(1, s + 1)])
+    barras = np.concatenate([[0], barras + metro])
+    info.update({"aplicada": True, "tiempos_corridos": s})
+    return grid, barras, s, info
+
+
 # ---------------- 3. notas ----------------
 def partir_reataques(notas, y, desde=3.0, sep=0.06, min_dur=0.12):
     """El detector de ataques no ve bien los golpes repetidos sobre la misma nota (La-La-La-La): la cuerda
@@ -1993,6 +2034,12 @@ def procesar(ruta, salida, forzar):
         marca("transcribir")
         if not notas:
             raise RuntimeError(T("no se ha detectado ninguna nota de bajo", "no bass notes detected"))
+        grid, barras, corridos, info_fase = fase_por_bajo(grid, barras, metro, notas, conf)
+        DIAG["fase_por_bajo"] = info_fase
+        if corridos:
+            irregulares = [(i + 1, n) for i, n in irregulares]
+            log(T(f"  Tiempo 1 dudoso: los compases se corren {corridos} tiempo(s) para que empiecen donde cambia el bajo",
+                  f"  Doubtful downbeat: bars shifted {corridos} beat(s) to start where the bass changes"))
         log(T("  [4/6] Cuantizando y digitando...", "  [4/6] Quantising and fingering..."))
         q, desfase, ambiguas = cuantizar(notas, grid)
         afin_nombre, cuerdas, tab, movidas, nota_grave = elegir_afinacion(q, pitches_pyin)

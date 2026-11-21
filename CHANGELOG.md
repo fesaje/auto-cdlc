@@ -24,6 +24,8 @@ files: code, configuration, README and installers.
   - File names like "Artist - Album - 08 - Title" (no tags) give title "Title" and album "Album"; a leading
     track number and suffixes like "(Official Video)" or a YouTube id are removed.
   - The diagnostics record where notes fall inside each beat, to study swing and triplets.
+  - When the downbeat is doubtful, the bars are moved to start on the beat where the bass changes note most
+    often (it usually changes with the chord, on beat 1).
 - **0.4.1**:
   - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
     nothing is sent.

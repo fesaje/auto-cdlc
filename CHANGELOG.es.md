@@ -24,6 +24,8 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
   - Los nombres de archivo tipo "Artista - Disco - 08 - Título" (sin etiquetas) dan título "Título" y disco
     "Disco"; se quitan el número de pista inicial y coletillas como "(Official Video)" o el id de YouTube.
   - El diagnóstico guarda dónde caen las notas dentro de cada tiempo, para estudiar swing y tresillos.
+  - Cuando el tiempo 1 es dudoso, los compases se corren para empezar en el tiempo en el que más cambia de
+    nota el bajo (suele cambiar con el acorde, en el 1).
 - **0.4.1**:
   - En la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda desatendida),
     no se envía nada.
