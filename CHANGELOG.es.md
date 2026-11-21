@@ -14,6 +14,16 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     `wwise` acepta la carpeta de Wwise además de `WwiseConsole.exe`. Si falta, avisa antes de empezar.
   - Las canciones que terminan sin `.psarc` se cuentan y se listan aparte en el resumen final, con el
     motivo, en vez de parecer un "OK" normal.
+  - Los beats se detectan mientras se separa el bajo, a la vez: en los resultados recibidos era más o menos
+    un cuarto del tiempo de cada canción.
+  - Cada canción lleva una fiabilidad (alta, media, baja) con los motivos (pulso inestable, tiempo 1 dudoso,
+    muchos compases irregulares, notas fuera de la rejilla, tono del bajo poco claro). Sale en su línea y en
+    una lista de "conviene revisar" al final.
+  - Las canciones sin bajo ya no son un error: se marcan "sin bajo" y se saltan en las tandas siguientes
+    (salvo con `--forzar`).
+  - Los nombres de archivo tipo "Artista - Disco - 08 - Título" (sin etiquetas) dan título "Título" y disco
+    "Disco"; se quitan el número de pista inicial y coletillas como "(Official Video)" o el id de YouTube.
+  - El diagnóstico guarda dónde caen las notas dentro de cada tiempo, para estudiar swing y tresillos.
 - **0.4.1**:
   - En la pregunta de enviar resultados, Intro equivale a "sí". Si nadie contesta (tanda desatendida),
     no se envía nada.

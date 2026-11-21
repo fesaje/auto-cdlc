@@ -14,6 +14,16 @@ files: code, configuration, README and installers.
     key accepts the Wwise folder as well as `WwiseConsole.exe`. If it's missing, it warns before starting.
   - Songs that end without a `.psarc` are counted and listed apart in the final summary, with the reason,
     instead of looking like a normal "OK".
+  - Beats are detected while the bass is being separated, at the same time: on the results received, that
+    was about a quarter of the time per song.
+  - Each song gets a reliability level (high, medium, low) with the reasons (unsteady beat, doubtful downbeat,
+    many odd bars, notes off the grid, unclear bass pitch). They show in its line and in a "worth checking"
+    list at the end.
+  - Songs with no bass are no longer an error: they're marked "no bass" and skipped in later batches (unless
+    `--forzar`).
+  - File names like "Artist - Album - 08 - Title" (no tags) give title "Title" and album "Album"; a leading
+    track number and suffixes like "(Official Video)" or a YouTube id are removed.
+  - The diagnostics record where notes fall inside each beat, to study swing and triplets.
 - **0.4.1**:
   - In the question about sending results, Enter means "yes". If nobody answers (unattended batch),
     nothing is sent.

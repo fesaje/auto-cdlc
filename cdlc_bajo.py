@@ -47,6 +47,28 @@ COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
 SIN_PSARC = []   # canciones de la tanda que terminaron sin .psarc: (archivo, motivo)
+REVISAR = []     # canciones de la tanda con indicios de que la tablatura no es fiable: (archivo, nivel, motivos)
+
+
+def motivos_revisar(diag):
+    """Indicios de que la tablatura saldrá floja, con los umbrales sacados de los envíos: pulso que salta,
+    tiempo 1 dudoso, muchos compases raros, notas que no encajan en la rejilla o tono casi sin medir."""
+    b, p = diag.get("beats", {}), diag.get("deteccion_pulso", {})
+    q, t = diag.get("cuantizacion", {}), diag.get("transcripcion", {})
+    m = []
+    tmin, tmax = b.get("tempo_compas_min"), b.get("tempo_compas_max")
+    if (p.get("madmom_beats_inestables_pct") or 0) >= 15 or (b.get("beats_saltados_o_dobles") or 0) >= 30 \
+            or (tmin and tmax and tmax / tmin > 1.6):
+        m.append(T("pulso inestable", "unsteady beat"))
+    if b.get("confianza_tiempo_1", 1) < 0.7:
+        m.append(T("tiempo 1 dudoso", "doubtful downbeat"))
+    if len(b.get("compases_irregulares") or []) >= 5:
+        m.append(T("muchos compases irregulares", "many odd bars"))
+    if q.get("alineacion", 1) < 0.08:
+        m.append(T("notas fuera de la rejilla", "notes off the grid"))
+    if t.get("tramas_con_tono_fiable_pct", 100) < 5:
+        m.append(T("tono del bajo poco claro", "unclear bass pitch"))
+    return m
 ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
 PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
 UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
@@ -175,6 +197,31 @@ def _etiqueta_valida(texto):
     return bool(texto) and not ETIQUETA_BASURA.search(texto.strip())
 
 
+def partes_nombre(stem):
+    """'Artista - Título', 'Artista - Disco - 08 - Título' o 'Artista - 08 - Título' (del nombre del archivo).
+    Devuelve (artista, disco, título); vacíos si el nombre no tiene esa forma."""
+    stem = stem.replace("_", " ").strip()
+    if " - " not in stem:
+        return "", "", ""
+    partes = [x.strip() for x in stem.split(" - ")]
+    if re.fullmatch(r"\d{1,3}", partes[0]) and len(partes) > 2:     # '01 - Artista - Título'
+        partes = partes[1:]
+    artista = re.sub(r"^\d{1,3}[ .-]+", "", partes[0]).strip()   # '01 - ...' / '01. Artista - ...'
+    resto = partes[1:]
+    pista = [i for i, x in enumerate(resto[:-1]) if re.fullmatch(r"\d{1,3}", x)]
+    if pista:
+        i = pista[-1]
+        return artista, " - ".join(resto[:i]), quitar_coletilla(" - ".join(resto[i + 1:]))
+    return artista, "", quitar_coletilla(" - ".join(resto))
+
+
+def quitar_coletilla(titulo):
+    """Quita '(Official Video)', '[Videoclip]', '(Letra)'... y el id de YouTube '[dQw4w9WgXcQ]'."""
+    t = re.sub(r"\s*[\(\[](official )?(music )?(video ?clip|videoclip|video oficial|v[ií]deo|lyric video|"
+               r"audio( oficial)?|official (audio|video)|letra|lyrics?)[\)\]]", "", titulo, flags=re.I)
+    return re.sub(r"\s*\[[A-Za-z0-9_-]{11}\]$", "", t).strip()
+
+
 def metadatos(ruta):
     """Artista y título. Prioridad: etiquetas del archivo (si traen artista y título que no sean de
     relleno), después el nombre 'Artista - Título', y por último lo que haya.
@@ -184,15 +231,11 @@ def metadatos(ruta):
     a_et = a_et.split(" / ")[0]  # varios artistas: el primero
     t_et = et.get("title", "")
     stem = ruta.stem.replace("_", " ").strip()
-    a_nom, t_nom = "", ""
-    if " - " in stem:
-        a_nom, t_nom = (x.strip() for x in stem.split(" - ", 1))
-        a_nom = re.sub(r"^\d{1,3}[ .-]+", "", a_nom).strip()  # '01 - ...' / '01. Artista - ...'
+    a_nom, _, t_nom = partes_nombre(stem)
     a_et, t_et = re.sub(r"\s+", " ", a_et).strip(), re.sub(r"\s+", " ", t_et).strip()
     # etiquetas de descargas de YouTube: "LosPlanetasVEVO" / "Los Planetas - Topic" y "Artista - Título (Videoclip)"
     a_et = re.sub(r"\s*(VEVO|- Topic|Official)$", "", a_et, flags=re.I).strip()
-    t_et = re.sub(r"\s*[\(\[](official )?(music )?(video ?clip|videoclip|video oficial|v[ií]deo|lyric video|"
-                  r"audio( oficial)?|official (audio|video)|letra|lyrics?)[\)\]]", "", t_et, flags=re.I).strip()
+    t_et = quitar_coletilla(t_et)
     if " - " in t_et:
         izq, der = (x.strip() for x in t_et.split(" - ", 1))
         if _normalizar(izq).replace(" ", "") in (_normalizar(a_et).replace(" ", ""), _normalizar(a_nom).replace(" ", "")) \
@@ -216,6 +259,24 @@ def nombre_carpeta(artista, titulo):
     return n[:120].rstrip(". ") or "Sin nombre"
 
 
+_INDICES = {}
+
+
+def _indice_salida(salida):
+    """{archivo de entrada: carpeta} de lo ya procesado en 'salida' (se lee una vez por ejecución)."""
+    import json
+    clave = str(Path(salida).resolve())
+    if clave not in _INDICES:
+        idx = {}
+        for diag in Path(salida).glob("*/diagnostico.json"):
+            try:
+                idx.setdefault(json.loads(diag.read_text(encoding="utf-8")).get("archivo"), diag.parent)
+            except Exception:
+                pass
+        _INDICES[clave] = idx
+    return _INDICES[clave]
+
+
 def destino(ruta, salida):
     """Carpeta de salida de un mp3. Si ya se procesó con el nombre antiguo (el del archivo), se reutiliza
     esa para no repetir el trabajo; si otra canción distinta ocupa el nombre, se añade ' (2)', ' (3)'..."""
@@ -229,6 +290,11 @@ def destino(ruta, salida):
     viejo = re.sub(r"\s+", " ", re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", f"{artista} - {titulo}")).strip().rstrip(". ")[:120].rstrip(". ")
     if viejo != base and (salida / viejo / f"{viejo}.gp5").exists():
         return viejo, salida / viejo, artista, titulo, fuente, et
+    # procesada antes con otro nombre (p. ej. si cambió cómo se lee el título del archivo): se reconoce
+    # por el nombre del mp3 guardado en su diagnostico.json
+    previa = _indice_salida(salida).get(ruta.name)
+    if previa and (previa / f"{previa.name}.gp5").exists():
+        return previa.name, previa, artista, titulo, fuente, et
     for k in range(1, 50):
         nombre = base if k == 1 else f"{base} ({k})"
         d = salida / nombre
@@ -282,6 +348,10 @@ def album_y_anio(ruta):
 
 
 # ---------------- 1. separación del bajo ----------------
+class SinBajo(RuntimeError):
+    """La canción no tiene bajo (o casi nada): no es un fallo, se salta y no se vuelve a intentar."""
+
+
 def separar_bajo(wav_mezcla, tmp):
     from audio_separator.separator import Separator
     modelos = AQUI / "modelos"
@@ -803,6 +873,12 @@ def cuantizar(notas, grid):
         "desfase_version_anterior_ms": round(solo_semicorchea * 1000),
         "corrida_una_casilla_respecto_a_antes": abs(round((solo_semicorchea - desfase) / semicorchea)) >= 1,
         "alineacion": round(float(abs(np.mean(np.exp(2j * np.pi * err)))), 3),
+        # para estudiar swing y tresillos: fase de cada ataque dentro de su tiempo (48 casillas: caben
+        # semicorcheas y tresillos) y lo bien que encajan en 2, 3, 4 y 6 partes por tiempo (1 = perfecto)
+        "fase_en_el_tiempo_48": np.bincount((np.array([pos(t0 + desfase) % 1 for t0, _, _ in notas]) * 48)
+                                            .astype(int) % 48, minlength=48).tolist(),
+        "encaje_por_division": {str(k): round(float(abs(np.mean(np.exp(2j * np.pi * k * np.array(
+            [pos(t0 + desfase) for t0, _, _ in notas]))))), 3) for k in (2, 3, 4, 6)},
         "error_medio_semicorcheas": round(float(np.mean(np.abs(err))), 3), "ambiguas_pct": round(100 * ambiguas, 1),
         "choques_misma_casilla": choques, "choques_con_otra_nota": choques_otra_nota, "antes_del_grid": antes_del_grid,
         "notas_resultantes": len(q),
@@ -1879,20 +1955,37 @@ def procesar(ruta, salida, forzar):
         duracion = sf.info(str(mezcla)).duration
         marca("decodificar")
 
-        log(T("  [1/6] Separando el bajo...", "  [1/6] Separating the bass..."))
-        bajo = separar_bajo(mezcla, tmp)
-        marca("separar_bajo")
+        # Los beats solo dependen de la mezcla: se detectan en otro hilo mientras se separa el bajo
+        # (las dos cosas tardan; a la vez se ahorra casi todo el tiempo de los beats)
+        import threading
+        pulso = {}
+
+        def _beats():
+            try:
+                pulso["r"] = detectar_beats(mezcla_mono)
+            except BaseException as ex:      # se relanza en el hilo principal
+                pulso["e"] = ex
+        hilo = threading.Thread(target=_beats, daemon=True)
+        hilo.start()
+        log(T("  [1/6] Separando el bajo y detectando beats...", "  [1/6] Separating the bass and detecting beats..."))
+        try:
+            bajo = separar_bajo(mezcla, tmp)
+        finally:
+            hilo.join()                      # nunca dejarlo vivo: escribe en DIAG y usa la carpeta temporal
+        marca("separar_bajo_y_beats")
         DIAG["sonoridad"] = sonoridades(mezcla, bajo)
         dif = DIAG["sonoridad"].get("bajo_respecto_mezcla_db")
         if dif is not None and dif < -35:
             # en las canciones normales el bajo separado queda entre 6 y 18 dB por debajo de la mezcla;
             # a -35 dB o menos lo que se ha separado es ruido: la tablatura saldría inventada
-            raise RuntimeError(T(f"no parece tener bajo (lo separado está {-dif:.0f} dB por debajo de la mezcla); "
+            raise SinBajo(T(f"no parece tener bajo (lo separado está {-dif:.0f} dB por debajo de la mezcla); "
                                  "no genero tablatura",
                                  f"there seems to be no bass (the separated track is {-dif:.0f} dB below the mix); "
                                  "no tab generated"))
-        log(T("  [2/6] Detectando beats y compases...", "  [2/6] Detecting beats and bars..."))
-        beats, act, act_alt = detectar_beats(mezcla_mono)
+        log(T("  [2/6] Compases...", "  [2/6] Bars..."))
+        if "e" in pulso:
+            raise pulso["e"]
+        beats, act, act_alt = pulso["r"]
         grid, barras, bpm, conf, irregulares, metro = construir_grid(beats, act, duracion, act_alt)
         marca("beats_y_compases")
         log(T("  [3/6] Transcribiendo notas...", "  [3/6] Transcribing notes..."))
@@ -2145,6 +2238,8 @@ def procesar(ruta, salida, forzar):
                          "psarc": [Path(x).name for x in psarcs], "error_psarc": None if psarcs else error_psarc,
                          "compases_irregulares": [f"{c}:{n}/4" for c, n in irregulares]}
     DIAG["tiempos_s"]["total"] = round(time.time() - t_ini, 1)
+    motivos = motivos_revisar(DIAG)
+    DIAG["fiabilidad"] = {"nivel": ("alta", "media", "baja")[min(2, len(motivos))], "motivos": motivos}
     import json
     (dest / "diagnostico.json").write_text(json.dumps(DIAG, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     aviso = T("  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics",
@@ -2158,6 +2253,10 @@ def procesar(ruta, salida, forzar):
     if COMPILAR and not psarcs:
         SIN_PSARC.append((ruta.name, error_psarc))
     extra += " | psarc OK" if psarcs else (T(" | sin psarc: ", " | no psarc: ") + f"{error_psarc}" if COMPILAR else "")
+    if motivos:
+        nivel = {"media": T("media", "medium"), "baja": T("baja", "low")}[DIAG["fiabilidad"]["nivel"]]
+        extra += T(f" | fiabilidad {nivel}: ", f" | {nivel} reliability: ") + ", ".join(motivos)
+        REVISAR.append((ruta.name, DIAG["fiabilidad"]["nivel"], motivos))
     resumen = T(f"{n_gp} notas, {bpm:.0f} BPM, dudosas {ambiguas*100:.0f}%", f"{n_gp} notes, {bpm:.0f} BPM, doubtful {ambiguas*100:.0f}%") + f"{extra}{aviso}"
     log(f"  OK: {resumen}")
     return "ok", resumen
@@ -2266,7 +2365,8 @@ class Registro:
         self._guardar()
 
     def cancion(self, i, ruta, estado, resumen, segundos, informe, traza=None):
-        etiqueta = {"ok": "OK", "saltada": T("SALTADA (ya procesada)", "SKIPPED (already processed)"), "error": "ERROR"}[estado]
+        etiqueta = {"ok": "OK", "saltada": T("SALTADA (ya procesada)", "SKIPPED (already processed)"), "error": "ERROR",
+                    "sin_bajo": T("SIN BAJO", "NO BASS")}[estado]
         resumen = (resumen or "").strip().splitlines()[0][:200] if resumen else ""
         self.lineas.append(f"[{i}/{self.total}] {ruta.name} | {etiqueta} | {segundos:.0f} s"
                            + (f" | {resumen}" if resumen else ""))
@@ -2281,12 +2381,12 @@ class Registro:
             self.errores.append(f"--- {ruta.name} ---\n{traza}")
         self._guardar()
 
-    def cerrar(self, ok, errores):
+    def cerrar(self, ok, errores, sin_bajo=0):
         sin = len(SIN_PSARC)
         self.final = T(f"Terminado: {ok} bien" + (f" ({sin} sin .psarc)" if sin else "")
-                       + f", {errores} con error, en {(time.time() - self.inicio) / 60:.1f} min\n",
+                       + (f", {sin_bajo} sin bajo" if sin_bajo else "") + f", {errores} con error, en {(time.time() - self.inicio) / 60:.1f} min\n",
                        f"Finished: {ok} OK" + (f" ({sin} without .psarc)" if sin else "")
-                       + f", {errores} with errors, in {(time.time() - self.inicio) / 60:.1f} min\n")
+                       + (f", {sin_bajo} with no bass" if sin_bajo else "") + f", {errores} with errors, in {(time.time() - self.inicio) / 60:.1f} min\n")
         for n, e in SIN_PSARC:
             self.final += T(f"  sin .psarc: {n}: {e}\n", f"  no .psarc: {n}: {e}\n")
         self._guardar()
@@ -2374,6 +2474,10 @@ def disco_de(ruta):
     album = et.get("album") if _etiqueta_valida(et.get("album", "")) else None
     if album:
         return art, album, "etiquetas", _num_pista(et.get("tracknumber"))
+    _, alb_nom, _ = partes_nombre(ruta.stem)
+    m = re.search(r" - (\d{1,3}) - ", ruta.stem)
+    if alb_nom:
+        return art, alb_nom, "nombre del archivo", int(m.group(1)) if m else 999
     if not SIN_INTERNET:
         try:
             c = buscar_caratula(artista, titulo)
@@ -2386,20 +2490,23 @@ def disco_de(ruta):
 
 def historial(salida):
     """De los registros anteriores: segundos medios por canción y archivos que dieron error."""
-    tiempos, fallidas = [], set()
+    tiempos, fallidas, sin_bajo = [], set(), set()
     for reg in sorted(Path(salida).glob("registro_*.txt")):
         try:
             for l in reg.read_text(encoding="utf-8", errors="replace").splitlines():
-                m = re.match(r"\[\d+/\d+\] (.+?) \| (OK|ERROR) \| (\d+) s", l)
+                m = re.match(r"\[\d+/\d+\] (.+?) \| (OK|ERROR|SIN BAJO|NO BASS) \| (\d+) s(.*)", l)
                 if m:
                     if m.group(2) == "OK":
-                        tiempos.append(int(m.group(3))); fallidas.discard(m.group(1))
+                        tiempos.append(int(m.group(3))); fallidas.discard(m.group(1)); sin_bajo.discard(m.group(1))
+                    elif m.group(2) != "ERROR" or "no parece tener bajo" in m.group(4) \
+                            or "there seems to be no bass" in m.group(4):
+                        sin_bajo.add(m.group(1)); fallidas.discard(m.group(1))
                     else:
                         fallidas.add(m.group(1))
         except Exception:
             pass
     medio = float(np.median(tiempos[-200:])) if len(tiempos) >= 5 else None
-    return medio, fallidas
+    return medio, fallidas, sin_bajo
 
 
 def alias_tono(v):
@@ -2440,9 +2547,14 @@ def planificar(archivos, salida, forzar, preguntar):
             hechas += 1
         else:
             pendientes.append(r)
-    seg_cancion, fallidas = historial(salida)
+    seg_cancion, fallidas, sin_bajo = historial(salida)
+    sin = [] if forzar else [r for r in pendientes if r.name in sin_bajo]
+    pendientes = [r for r in pendientes if r not in sin]
     log(T(f"\nEn la entrada hay {len(archivos)} canciones: {hechas} ya procesadas, {len(pendientes)} pendientes.",
           f"\nThe input has {len(archivos)} songs: {hechas} already processed, {len(pendientes)} pending."))
+    if sin:
+        log(T(f"Se saltan {len(sin)} que no tenían bajo en tandas anteriores (usa --forzar para repetirlas).",
+              f"Skipping {len(sin)} that had no bass in earlier batches (use --forzar to redo them)."))
     if not pendientes:
         return []
     log(T("Agrupando por disco...", "Grouping by album..."))
@@ -2457,15 +2569,16 @@ def planificar(archivos, salida, forzar, preguntar):
     for art, alb in orden:
         d = discos[(art, alb)]
         nota = "" if d["origen"] in ("etiquetas", "sin datos") else T(f"  (disco sacado de: {d['origen']})",
-                                                        "  (album from: " + {"consulta en internet": "online lookup"}.get(d["origen"], "no data") + ")")
+                                                        "  (album from: " + {"consulta en internet": "online lookup", "nombre del archivo": "file name"}
+                                                        .get(d["origen"], "no data") + ")")
         n = len(d['canciones'])
         log(f"  {art} > {alb}: {n} " + (T('canción', 'song') if n == 1 else T('canciones', 'songs')) + nota)
 
     reintentar = True
     fallaron = [r for r in pendientes if r.name in fallidas]
     if fallaron:
-        log(T(f"\n{len(fallaron)} de las pendientes dieron error en tandas anteriores (p. ej. sin bajo):",
-              f"\n{len(fallaron)} of the pending songs failed in earlier batches (e.g. no bass):"))
+        log(T(f"\n{len(fallaron)} de las pendientes dieron error en tandas anteriores:",
+              f"\n{len(fallaron)} of the pending songs failed in earlier batches:"))
         for r in fallaron[:8]:
             log(f"   - {r.name}")
         if len(fallaron) > 8:
@@ -2858,7 +2971,7 @@ def main():
     registro.cabecera += T("Discos: ", "Albums: ") + " || ".join(
         f"{k[0]} > {k[1]} (tono {aj['tono']}, púa {aj['pua']})"
         for k, aj in dict((k, aj) for _, k, aj in cola).items()) + "\n"
-    ok, fallos = 0, []
+    ok, fallos, sin_bajo = 0, [], []
     for i, (r, disco, aj) in enumerate(cola, 1):
         TONO_MODO = aj["tono"]
         PUA_FORZADA = {"pua": True, "dedos": False}.get(aj["pua"])
@@ -2870,6 +2983,13 @@ def main():
             registro.cancion(i, r, estado, resumen, time.time() - t0, destino(r, salida)[1] / "informe.txt")
             if estado == "ok":
                 enviar_cancion(r, estado, resumen, destino(r, salida)[1])
+        except SinBajo as ex:
+            sin_bajo.append(r.name); log(f"  {T('SIN BAJO', 'NO BASS')}: {ex}")
+            carpeta = destino(r, salida)[1]
+            if carpeta.is_dir() and not any(carpeta.iterdir()):
+                carpeta.rmdir()
+            registro.cancion(i, r, "sin_bajo", str(ex), time.time() - t0, None)
+            enviar_cancion(r, "sin_bajo", str(ex), None)
         except Exception as ex:
             import traceback
             primera = str(ex).strip().splitlines()[0] if str(ex).strip() else type(ex).__name__
@@ -2885,12 +3005,19 @@ def main():
                 DIAG, ensure_ascii=False, separators=(",", ":"), default=str)
             registro.cancion(i, r, "error", str(ex), time.time() - t0, None, traza)
             enviar_cancion(r, "error", str(ex), carpeta if carpeta.is_dir() else None, traza)
-    registro.cerrar(ok, len(fallos))
+    registro.cerrar(ok, len(fallos), len(sin_bajo))
     sin = len(SIN_PSARC)
-    log(T(f"\nTerminado: {ok} bien" + (f" ({sin} sin .psarc)" if sin else "") + f", {len(fallos)} con error. Resultados en: {salida}",
-          f"\nFinished: {ok} OK" + (f" ({sin} without .psarc)" if sin else "") + f", {len(fallos)} with errors. Results in: {salida}"))
+    nb = len(sin_bajo)
+    log(T(f"\nTerminado: {ok} bien" + (f" ({sin} sin .psarc)" if sin else "") + (f", {nb} sin bajo" if nb else "")
+          + f", {len(fallos)} con error. Resultados en: {salida}",
+          f"\nFinished: {ok} OK" + (f" ({sin} without .psarc)" if sin else "") + (f", {nb} with no bass" if nb else "")
+          + f", {len(fallos)} with errors. Results in: {salida}"))
     for n, e in fallos:
         log(f"  - {n}: {e}")
+    if REVISAR:
+        log(T("Conviene revisar (la tablatura puede salir floja):", "Worth checking (the tab may be weak):"))
+        for n, nivel, ms in REVISAR:
+            log(f"  - {n}: " + ", ".join(ms))
     if sin:
         log(T("Sin .psarc (los archivos para editar sí están en su carpeta):",
               "No .psarc (the editable files are still in each song's folder):"))
