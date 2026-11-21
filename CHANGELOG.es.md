@@ -7,6 +7,8 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
+- **0.4.3** (sin publicar): la descarga de la actualización reintenta y, si no llega al servidor de código
+  de GitHub, usa el paquete para Windows adjunto a la release.
 - **0.4.2**:
   - La estimación de tiempo antes de empezar se muestra en horas, minutos y segundos (por ejemplo,
     "unos 20 min 48 s (5 min 12 s por canción)").

@@ -35,7 +35,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
@@ -2794,11 +2794,38 @@ def _num_version(v):
     return tuple(int(x) for x in re.findall(r"\d+", str(v))[:4])
 
 
-def _bajar(url, destino):
+def _bajar(url, destino, intentos=3):
+    """Descarga con reintentos (un fallo de DNS o de red suelto no debe tirar la actualización)."""
     import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(destino, "wb") as f:
-        shutil.copyfileobj(r, f)
+    for k in range(intentos):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+            with urllib.request.urlopen(req, timeout=60) as r, open(destino, "wb") as f:
+                shutil.copyfileobj(r, f)
+            return
+        except Exception:
+            if k == intentos - 1:
+                raise
+            time.sleep(3 * (k + 1))
+
+
+def _bajar_codigo(rel, destino):
+    """El código de la release: primero el zip del código (codeload.github.com); si ese servidor no
+    responde o no se resuelve, el paquete para Windows adjunto a la release (otro servidor) y, por
+    último, el archivo de la etiqueta."""
+    tag = rel.get("tag_name", "")
+    urls = [rel.get("zipball_url")]
+    urls += [a["browser_download_url"] for a in rel.get("assets", [])
+             if a.get("name", "").endswith("-windows.zip") and a.get("browser_download_url")]
+    urls.append(f"{REPO}/archive/refs/tags/{tag}.zip")
+    error = None
+    for url in [u for u in urls if u]:
+        try:
+            _bajar(url, destino)
+            return
+        except Exception as ex:
+            error = ex
+    raise error
 
 
 def fusionar_configuracion(actual, plantilla):
@@ -2862,7 +2889,7 @@ def comprobar_actualizacion(preguntar):
     log(T("Descargando la versión nueva...", "Downloading the new version..."))
     tmp = Path(tempfile.mkdtemp(prefix="auto-cdlc-act-"))
     try:
-        _bajar(rel["zipball_url"], tmp / "codigo.zip")
+        _bajar_codigo(rel, tmp / "codigo.zip")
         with zipfile.ZipFile(tmp / "codigo.zip") as z:
             z.extractall(tmp / "codigo")
         raiz = next((tmp / "codigo").iterdir())
