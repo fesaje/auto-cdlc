@@ -2758,9 +2758,52 @@ def id_instalacion():
 _ENVIO_FALLIDO = [False]
 
 
+PENDIENTES = AQUI / "envios_pendientes"
+
+
+def _post_envio(cuerpo, timeout=20):
+    import urllib.request
+    req = urllib.request.Request(ENVIOS_URL.rstrip("/") + "/envio", data=cuerpo, method="POST",
+                                 headers={"Content-Type": "application/gzip", "User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        r.read()
+
+
+def _guardar_pendiente(cuerpo):
+    """Si el servidor no responde (p. ej. los bloqueos de IPs de Cloudflare en España en días de fútbol),
+    el envío se guarda y se manda en la siguiente tanda. Como mucho 500."""
+    try:
+        PENDIENTES.mkdir(exist_ok=True)
+        if len(list(PENDIENTES.glob("*.json.gz"))) < 500:
+            (PENDIENTES / f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}-{time.time_ns() % 10**6}.json.gz"
+             ).write_bytes(cuerpo)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def reenviar_pendientes():
+    """Manda los envíos que quedaron guardados en tandas anteriores; para al primer fallo."""
+    if not (ENVIAR and ENVIOS_URL) or not PENDIENTES.is_dir():
+        return
+    archivos = sorted(PENDIENTES.glob("*.json.gz"))
+    hechos = 0
+    for f in archivos:
+        try:
+            _post_envio(f.read_bytes(), timeout=10)
+            f.unlink(); hechos += 1
+        except Exception:
+            break
+    if hechos:
+        log(T(f"Enviados {hechos} resultados que estaban pendientes de tandas anteriores.",
+              f"Sent {hechos} results left pending from earlier batches."))
+
+
 def enviar_cancion(ruta, estado, resumen, carpeta, traza=None):
-    """Sube los resultados de una canción (nunca el audio ni la letra) al servidor de envíos."""
-    if not (ENVIAR and ENVIOS_URL) or _ENVIO_FALLIDO[0]:
+    """Sube los resultados de una canción (nunca el audio ni la letra) al servidor de envíos. Si no se
+    puede, los guarda para la siguiente tanda."""
+    if not (ENVIAR and ENVIOS_URL):
         return
     import json, gzip, platform, urllib.request
     datos = {"programa": "auto-cdlc", "version": VERSION, "idioma": IDIOMA, "instalacion": id_instalacion(),
@@ -2778,15 +2821,19 @@ def enviar_cancion(ruta, estado, resumen, carpeta, traza=None):
             datos["cancion"]["xml"] = {x.name: x.read_text(encoding="utf-8")
                                        for x in sorted(c.glob("*_bass*_RS2.xml"))}   # sin la letra
         cuerpo = gzip.compress(_anonimizar(json.dumps(datos, ensure_ascii=False, default=str)).encode("utf-8"))
-        req = urllib.request.Request(ENVIOS_URL.rstrip("/") + "/envio", data=cuerpo, method="POST",
-                                     headers={"Content-Type": "application/gzip", "User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            r.read()
-        log(T("  (resultados enviados, gracias)", "  (results sent, thank you)"))
-    except Exception as ex:
-        _ENVIO_FALLIDO[0] = True
-        log(T(f"  Aviso: no se han podido enviar los resultados ({ex}); no lo intento más en esta tanda.",
-              f"  Warning: couldn't send the results ({ex}); not trying again in this batch."))
+    except Exception:
+        return
+    if not _ENVIO_FALLIDO[0]:
+        try:
+            _post_envio(cuerpo)
+            log(T("  (resultados enviados, gracias)", "  (results sent, thank you)"))
+            return
+        except Exception as ex:
+            _ENVIO_FALLIDO[0] = True
+            log(T(f"  Aviso: no se han podido enviar los resultados ({ex}). Se guardan y se mandarán en la "
+                  "siguiente tanda.",
+                  f"  Warning: couldn't send the results ({ex}). They're saved and will be sent in the next batch."))
+    _guardar_pendiente(cuerpo)
 
 
 # ---------------- actualizaciones ----------------
@@ -2893,7 +2940,8 @@ def comprobar_actualizacion(preguntar):
         with zipfile.ZipFile(tmp / "codigo.zip") as z:
             z.extractall(tmp / "codigo")
         raiz = next((tmp / "codigo").iterdir())
-        conservar = {"configuracion.txt", "entrada", "salida", "modelos", "psarc", ".venv", ".git"}
+        conservar = {"configuracion.txt", "entrada", "salida", "modelos", "psarc", ".venv", ".git",
+                     "envios_pendientes"}
         for org in raiz.rglob("*"):
             rel_path = org.relative_to(raiz)
             if not org.is_file() or rel_path.parts[0] in conservar or rel_path.parts[0].startswith(".git"):
@@ -3041,6 +3089,7 @@ def main():
         log(T("No hay nada pendiente. (Para repetir canciones ya hechas, usa --forzar.)",
               "Nothing pending. (To redo songs already processed, use --forzar.)"))
         return
+    reenviar_pendientes()
     registro = Registro(salida / time.strftime("registro_%Y-%m-%d_%H-%M.txt"), len(cola), a.forzar)
     registro.cabecera += T("Discos: ", "Albums: ") + " || ".join(
         f"{k[0]} > {k[1]} (tono {aj['tono']}, púa {aj['pua']})"
@@ -3109,6 +3158,8 @@ def main():
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:
         log(T(f"Los .psarc están en: {CARPETA_PSARC}", f"The .psarc files are in: {CARPETA_PSARC}"))
+    if not _ENVIO_FALLIDO[0]:
+        reenviar_pendientes()
     mover_entradas(preguntas, rutas_ok, rutas_descartadas)
 
 

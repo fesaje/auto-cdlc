@@ -8,7 +8,9 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
 - **0.4.3** (sin publicar): la descarga de la actualización reintenta y, si no llega al servidor de código
-  de GitHub, usa el paquete para Windows adjunto a la release.
+  de GitHub, usa el paquete para Windows adjunto a la release. Los resultados que no se pueden enviar (p. ej.
+  por los bloqueos de IPs de Cloudflare en España en días de fútbol) se guardan en `envios_pendientes` y se
+  mandan en la siguiente tanda.
 - **0.4.2**:
   - La estimación de tiempo antes de empezar se muestra en horas, minutos y segundos (por ejemplo,
     "unos 20 min 48 s (5 min 12 s por canción)").
