@@ -16,6 +16,8 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     versiones anteriores solo pueden cambiar tono, púa y velocidad.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
+  - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para
+    canciones con el ritmo mal.
   - Los tonos predefinidos se llaman en inglés (`clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz`).
 - **0.5.0**: los nombres que ve el usuario pasan al inglés, y los antiguos se siguen entendiendo.
   - Carpetas `input`, `output`, `models`, `tools`, `pending_uploads`; `process.bat` e `install.bat`;

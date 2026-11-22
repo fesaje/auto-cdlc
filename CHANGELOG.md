@@ -16,6 +16,8 @@ files: code, configuration, README and installers.
     versions can only change tone, pick and speed.
   - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
+  - New `separation_model` option: `demucs` as an alternative to the default bass separator, for songs
+    whose rhythm comes out wrong.
   - Tone presets are named in English (`clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz`).
 - **0.5.0**: user-facing names in English, with the old ones still understood.
   - Folders `input`, `output`, `models`, `tools`, `pending_uploads`; `process.bat` and `install.bat`;

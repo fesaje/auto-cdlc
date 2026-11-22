@@ -167,6 +167,7 @@ CAMPOS = [  # key, kind, choices, label (es, en)
     ("lyrics", "bool", None, ("Letra en pantalla", "On-screen lyrics")),
     ("split_repeated", "bool", None, ("Partir notas repetidas", "Split repeated notes")),
     ("crepe_pitch", "bool", None, ("Tono de las notas con CREPE", "Note pitch with CREPE")),
+    ("separation_model", "select", ["mdx", "demucs"], ("Separación del bajo (modelo)", "Bass separation (model)")),
     ("cents_threshold", "text", None, ("Umbral de Tuning Pitch (cents)", "Tuning Pitch threshold (cents)")),
     ("question_timeout", "text", None, ("Espera de las preguntas (s)", "Question timeout (s)")),
     ("check_updates", "bool", None, ("Buscar actualizaciones", "Check for updates")),

@@ -13,6 +13,7 @@ mantiene su licencia: consulta su repositorio para el texto completo.
 | [Beat This!](https://github.com/CPJKU/beat_this) | Tiempo 1 y pulso | Código MIT; el modelo se descarga aparte, consulta su repositorio |
 | [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) | Separación del bajo | MIT |
 | Modelo MDX-Net *kuielab_b_bass* | Separación del bajo (lo descarga audio-separator) | Consulta [kuielab/mdx-net](https://github.com/kuielab/mdx-net) |
+| Modelo [Demucs](https://github.com/facebookresearch/demucs) *hdemucs_mmi* | Separación del bajo con `separation_model = demucs` (lo descarga audio-separator) | MIT |
 | [torchcrepe](https://github.com/maxrmorrison/torchcrepe) (CREPE) | Altura de las notas | MIT |
 | [librosa](https://github.com/librosa/librosa) | Análisis de audio | ISC |
 | [PyTorch](https://pytorch.org), [ONNX Runtime](https://onnxruntime.ai), NumPy, SciPy | Cálculo | BSD / MIT |

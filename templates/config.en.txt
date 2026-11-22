@@ -46,6 +46,12 @@ reattack_threshold_db = 3
 # Pitch of each note with CREPE (neural network, more reliable on low notes).
 crepe_pitch = yes
 
+# Model that separates the bass from the mix:
+#   mdx     -> steadiest note pitch (default)
+#   demucs  -> notes land on the beat more precisely on clean mixes, but it can lose the pitch on dense
+#              ones and takes about 1.5x longer. Worth trying on a song whose rhythm came out wrong.
+separation_model = mdx
+
 # In-game bass sound (amp and pedals).
 #   auto       -> if the song or the artist has official Rocksmith DLC, its tone; otherwise clean
 #                 (and the bright clean one if a pick is detected).

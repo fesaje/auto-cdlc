@@ -142,6 +142,13 @@ del ritmo:
 
 Cada nota se mantiene hasta la siguiente. Tiene su propia dificultad dinámica y su propio porcentaje.
 
+### Modelo de separación del bajo
+
+`separation_model = mdx` (por defecto) da el tono de las notas más estable. `demucs` coloca las notas más
+exactas en el tiempo en mezclas limpias, pero en las densas puede perder el tono, y tarda 1,5 veces más.
+Vale la pena probarlo en una canción con el ritmo mal: cámbialo y vuelve a procesar esa canción con
+`--force`. Con un bajo de sintetizador puede no encontrar bajo; para esas, vuelve a `mdx`.
+
 ### Letra
 
 Se busca en [LRCLIB](https://lrclib.net) y solo se usa si la duración coincide con la de tu archivo

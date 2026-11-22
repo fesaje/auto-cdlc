@@ -47,6 +47,12 @@ reattack_threshold_db = 3
 # Tono de cada nota con CREPE (red neuronal, más fiable en notas graves).
 crepe_pitch = yes
 
+# Modelo que separa el bajo de la mezcla:
+#   mdx     -> el tono de las notas más estable (por defecto)
+#   demucs  -> en mezclas limpias las notas caen más exactas en el tiempo, pero en las densas puede perder
+#              el tono y tarda 1,5 veces más. Vale la pena probarlo en una canción con el ritmo mal.
+separation_model = mdx
+
 # Sonido del bajo en el juego (ampli y pedales).
 #   auto       -> si la canción o el artista tiene DLC oficial de Rocksmith, su tono; si no, limpio
 #                 (y si se detecta púa, el limpio brillante).

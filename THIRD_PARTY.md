@@ -13,6 +13,7 @@ Each keeps its own licence: check its repository for the full text.
 | [Beat This!](https://github.com/CPJKU/beat_this) | Downbeat and beat | Code MIT; the model is downloaded separately, check its repository |
 | [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) | Bass separation | MIT |
 | MDX-Net model *kuielab_b_bass* | Bass separation (downloaded by audio-separator) | See [kuielab/mdx-net](https://github.com/kuielab/mdx-net) |
+| [Demucs](https://github.com/facebookresearch/demucs) model *hdemucs_mmi* | Bass separation with `separation_model = demucs` (downloaded by audio-separator) | MIT |
 | [torchcrepe](https://github.com/maxrmorrison/torchcrepe) (CREPE) | Note pitch | MIT |
 | [librosa](https://github.com/librosa/librosa) | Audio analysis | ISC |
 | [PyTorch](https://pytorch.org), [ONNX Runtime](https://onnxruntime.ai), NumPy, SciPy | Computation | BSD / MIT |

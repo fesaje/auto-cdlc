@@ -141,6 +141,13 @@ points of the rhythm:
 
 Each note is held until the next one. It has its own dynamic difficulty and its own percentage.
 
+### Bass separation model
+
+`separation_model = mdx` (default) gives the steadiest note pitch. `demucs` puts the notes on the beat more
+precisely on clean mixes, but on dense ones it can lose the pitch, and it takes about 1.5 times longer. Worth
+trying on a song whose rhythm came out wrong: change it, then process that song again with `--force`. With
+a synth bass it may find no bass at all; go back to `mdx` for those.
+
 ### Lyrics
 
 They're looked up on [LRCLIB](https://lrclib.net) and only used if the length matches your file

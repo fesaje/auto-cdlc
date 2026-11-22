@@ -98,6 +98,9 @@ EXTENSIONES = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma"}
 SR = 22050                 # análisis del bajo
 HOP = 256
 MODELO_BAJO = "kuielab_b_bass.onnx"
+# config.txt: separation_model. mdx (default) gives the steadiest pitch; demucs (hdemucs_mmi) puts notes on the
+# beat more precisely on clean mixes but loses pitch on dense ones, and takes about 1.5x longer on CPU.
+MODELOS_SEPARACION = {"mdx": "kuielab_b_bass.onnx", "demucs": "hdemucs_mmi.yaml"}
 PYIN_MIN_PROB = 0.3        # confianza mínima de pYIN; por debajo decide la CQT
 ENERGIA_MIN_DB = -40       # notas más flojas que esto (respecto al pico) se ignoran
 DUR_MIN = 0.04             # s
@@ -2035,6 +2038,7 @@ def procesar(ruta, salida, forzar):
         finally:
             hilo.join()                      # nunca dejarlo vivo: escribe en DIAG y usa la carpeta temporal
         marca("separar_bajo_y_beats")
+        DIAG["modelo_separacion"] = MODELO_BAJO
         DIAG["sonoridad"] = sonoridades(mezcla, bajo)
         dif = DIAG["sonoridad"].get("bajo_respecto_mezcla_db")
         if dif is not None and dif < -35:
@@ -3253,6 +3257,9 @@ def main():
         return conf.get(clave, "yes").strip().lower() not in no
     PARTIR_REPETIDAS = si("split_repeated")
     TONO_CREPE = si("crepe_pitch")
+    global MODELO_BAJO
+    m = conf.get("separation_model", "mdx").strip()
+    MODELO_BAJO = MODELOS_SEPARACION.get(m.lower(), m or MODELOS_SEPARACION["mdx"])
     TONO_MODO = alias_tono(conf.get("bass_tone", "auto").strip() or "auto")
     LETRA = si("lyrics")
     ARREGLO_SIMPLE = {"no": None, "none": None, "bar": 0, "half": 1, "beat": 2, "eighth": 3}.get(
