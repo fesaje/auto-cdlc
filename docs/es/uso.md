@@ -186,3 +186,13 @@ Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan ant
   Visualiser*). Después importa el `.gp5` (*File → Import → Guitar Pro*, pista *PART REAL_BASS*,
   aceptando los *time signatures*). Luego sustituye en DLC Builder el XML del arreglo por el que guarde
   EOF.
+- **Reempaquetar con auto-cdlc**: después de retocar los XML del arreglo en la carpeta de la canción (o de
+  guardar el XML de EOF encima de `..._bass_RS2.xml`), vuelve a crear el `.psarc` sin analizar el audio:
+
+  ```
+  procesar.bat --reempaquetar "salida\Artista - Título"
+  ```
+
+  Se pueden pasar varias carpetas o archivos `.rs2dlc`. Usa el mismo Wwise y la misma carpeta `psarc`
+  que el proceso normal. La dificultad dinámica solo se genera en los arreglos que tienen un solo nivel;
+  si tu XML ya trae sus niveles, se respetan.

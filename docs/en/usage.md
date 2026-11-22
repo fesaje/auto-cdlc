@@ -187,3 +187,13 @@ about 10 KB per song. It helps find the cases where the program fails and improv
 - **Editor on Fire**: create a project with the `.ogg` and import the `.svl` (*File → Import → Sonic
   Visualiser*). Then import the `.gp5` (*File → Import → Guitar Pro*, track *PART REAL_BASS*, accepting
   the *time signatures*). Afterwards, replace the arrangement XML in DLC Builder with the one EOF saves.
+- **Rebuild with auto-cdlc**: after editing the arrangement XMLs in the song's folder (or saving the EOF
+  XML over `..._bass_RS2.xml`), rebuild the `.psarc` without analysing the audio again:
+
+  ```
+  procesar.bat --rebuild "salida\Artist - Title"
+  ```
+
+  You can pass several folders or `.rs2dlc` files. It uses the same Wwise and `psarc` folder as normal
+  processing. Dynamic difficulty is only generated for arrangements that have a single level; if your
+  XML already has its own levels, they are kept.

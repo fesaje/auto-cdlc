@@ -10,6 +10,8 @@ files: code, configuration, README and installers.
 - **0.4.3** (unreleased): the update download retries, and if GitHub's code server can't be reached it
   falls back to the Windows package attached to the release. Results that can't be sent (e.g. Cloudflare
   IPs blocked in Spain during football matches) are saved in `envios_pendientes` and sent in the next batch.
+  New `--rebuild` (`--reempaquetar`): rebuilds the `.psarc` of processed songs after hand-editing their XMLs,
+  without analysing the audio again.
 - **0.4.2**:
   - The time estimate before starting is shown in hours, minutes and seconds (e.g. "about 20 min 48 s
     (5 min 12 s per song)").

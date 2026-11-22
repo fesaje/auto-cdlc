@@ -2991,6 +2991,10 @@ def main():
     ap.add_argument("--sin-psarc", action="store_true", help="no compilar: deja sólo el proyecto .rs2dlc")
     ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
     ap.add_argument("--sin-actualizar", action="store_true", help="no buscar versiones nuevas")
+    ap.add_argument("--reempaquetar", "--rebuild", action="store_true",
+                    help="volver a crear el .psarc de canciones ya procesadas (p. ej. tras retocar a mano sus XML "
+                         "o su proyecto .rs2dlc): pasa sus carpetas de 'salida' o sus .rs2dlc / rebuild the .psarc "
+                         "of already processed songs after hand-editing: pass their 'salida' folders or .rs2dlc files")
     ap.add_argument("--sin-preguntas", action="store_true",
                     help="no preguntar nada: usar lo de configuracion.txt (y lo recordado de cada disco)")
     a = ap.parse_args()
@@ -3052,6 +3056,8 @@ def main():
                   "  Pon en configuracion.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
                   "WARNING: Wwise (WwiseConsole.exe) not found, so the .psarc files can't be built.\n"
                   "  Set the wwise key in configuracion.txt to the Wwise folder or to WwiseConsole.exe."))
+    if a.reempaquetar:
+        sys.exit(reempaquetar(a.entradas))
     espera = 60
     try:
         espera = int(conf.get("espera_preguntas", 60))
@@ -3161,6 +3167,46 @@ def main():
     if not _ENVIO_FALLIDO[0]:
         reenviar_pendientes()
     mover_entradas(preguntas, rutas_ok, rutas_descartadas)
+
+
+def reempaquetar(entradas):
+    """Vuelve a crear el .psarc desde el proyecto .rs2dlc de cada canción (y los XML que este enlaza), sin
+    volver a analizar el audio: para quien retoca la tablatura a mano (EOF, editor de XML, DLC Builder)."""
+    if not entradas:
+        log(T("Indica las carpetas de las canciones (dentro de 'salida') o sus .rs2dlc. Ejemplo:\n"
+              '  procesar.bat --reempaquetar "salida\\Artista - Título"',
+              "Give the songs' folders (inside 'salida') or their .rs2dlc files. Example:\n"
+              '  procesar.bat --rebuild "salida\\Artist - Title"'))
+        return 2
+    if not ruta_cdlc_pack().exists():
+        log(T(f"No encuentro {ruta_cdlc_pack()}.", f"{ruta_cdlc_pack()} not found."))
+        return 1
+    CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
+    proyectos = []
+    for e in entradas:
+        e = Path(e)
+        if e.is_file() and e.suffix.lower() == ".rs2dlc":
+            proyectos.append(e)
+        elif e.is_dir():
+            encontrados = sorted(e.glob("*.rs2dlc")) or sorted(e.glob("*/*.rs2dlc"))
+            proyectos += encontrados
+            if not encontrados:
+                log(T(f"  {e}: no hay ningún .rs2dlc", f"  {e}: no .rs2dlc in it"))
+        else:
+            log(T(f"  {e}: no existe", f"  {e}: doesn't exist"))
+    bien = 0
+    for k, pr in enumerate(proyectos, 1):
+        log(T(f"[{k}/{len(proyectos)}] Empaquetando {pr.stem}...", f"[{k}/{len(proyectos)}] Packing {pr.stem}..."))
+        rutas, error = compilar_psarc(pr, CARPETA_PSARC, WWISE)
+        if rutas:
+            bien += 1
+            for r in rutas:
+                log(f"  -> {r}")
+        else:
+            log(f"  ERROR: {error}")
+    log(T(f"Terminado: {bien} de {len(proyectos)} .psarc creados en {CARPETA_PSARC}",
+          f"Finished: {bien} of {len(proyectos)} .psarc built in {CARPETA_PSARC}"))
+    return 0 if bien == len(proyectos) else 1
 
 
 def mover_entradas(preguntar, hechas, descartadas):
