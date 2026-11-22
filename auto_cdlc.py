@@ -42,7 +42,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
@@ -1182,8 +1182,17 @@ def elegir_tono(artista, titulo, pua, bajo_wav):
         info["rasgos"] = rasgos_saturacion(bajo_wav)
     except Exception as ex:
         info["rasgos_error"] = str(ex)[:200]
+    tono, origen = _resolver_tono(TONO_MODO, artista, titulo, pua)
+    info["elegido"] = origen
+    DIAG["tono"] = info
+    return tono, origen
+
+
+def _resolver_tono(modo, artista, titulo, pua):
+    """Tone object for the project and where it comes from, for a bass_tone value (auto, a preset or an
+    official tone name)."""
     tono, origen = None, None
-    modo = TONO_MODO.strip()
+    modo = (modo or "auto").strip()
     if modo.lower() in TONOS_PRESET:
         p = TONOS_PRESET[modo.lower()]; tono, origen = p, f"{modo.lower()} ({p['de']})"
     elif modo.lower() != "auto":
@@ -1197,8 +1206,6 @@ def elegir_tono(artista, titulo, pua, bajo_wav):
         tono, origen = TONOS_PRESET[clave], f"{clave} ({TONOS_PRESET[clave]['de']})"
     if IDIOMA == "en":
         origen = origen.replace("tono limpio de DLC Builder", "DLC Builder's clean tone")
-    info["elegido"] = origen
-    DIAG["tono"] = info
     gear = {k: v for k, v in tono["GearList"].items() if v}
     return {"GearList": gear, "ToneDescriptors": tono.get("ToneDescriptors") or ["$[35715]BASS"],
             "NameSeparator": " - ", "IsCustom": True, "Volume": str(tono.get("Volume", "-20")),
@@ -2161,6 +2168,13 @@ def procesar(ruta, salida, forzar):
                           es_pua(pua), tono,
                           xml_simple=xml_simple, xml_letra=xml_letra, velocidad=velocidad)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
+        guardar_analisis(dest, {
+            "version": VERSION, "nombre": nombre, "completo": completo, "compases": compases, "tab": tab,
+            "cuerdas": cuerdas, "cents": cents_aplicado, "indice_pua": pua, "pua": con_pua, "meta": meta,
+            "duracion_ogg": duracion_ogg, "bpm": bpm, "inicio_preview": inicio_prev,
+            "portada": Path(portada).name, "letra": xml_letra.name if xml_letra else None,
+            "tono": tono, "origen_tono": origen_tono, "velocidad": velocidad,
+            "arreglo_simple": ARREGLO_SIMPLE, "dd_inicial": DD_INICIAL, "dd_modo": DD_MODO})
         marca("escribir_archivos")
         psarcs, error_psarc = [], T("desactivada (--no-psarc)", "disabled (--no-psarc)")
         if COMPILAR and not problemas:
@@ -3183,6 +3197,15 @@ def main():
                          ".rs2dlc project: pass their folders in 'output' or their .rs2dlc files")
     ap.add_argument("--no-questions", "--sin-preguntas", dest="sin_preguntas", action="store_true",
                     help="ask nothing: use config.txt (and what was remembered for each album)")
+    g = ap.add_argument_group("changing processed songs (with --regenerate)")
+    g.add_argument("--regenerate", dest="regenerar", action="store_true",
+                   help="rewrite processed songs with other settings and rebuild their .psarc, without analysing "
+                        "the audio again: pass their folders in 'output'")
+    g.add_argument("--tone", help="bass tone: auto, clean, clean_pick, overdrive, distortion, fuzz or an official tone")
+    g.add_argument("--pick", choices=["yes", "no"], help="played with a pick or with fingers")
+    g.add_argument("--scroll", type=float, metavar="SPEED", help="scroll speed (0.5-5)")
+    g.add_argument("--simple", choices=["no", "bar", "half", "beat", "eighth"], help="simplified arrangement")
+    g.add_argument("--start-difficulty", type=float, metavar="PCT", help="starting difficulty in %%")
     ap.add_argument("--setup", metavar="LANG", help=argparse.SUPPRESS)   # used by install.bat
     a = ap.parse_args()
     if a.setup is not None:
@@ -3250,6 +3273,25 @@ def main():
                   "  Set the wwise key in config.txt to the Wwise folder or to WwiseConsole.exe."))
     if a.reempaquetar:
         sys.exit(reempaquetar(a.entradas))
+    if a.regenerar:
+        if not a.entradas:
+            log(T('Indica las carpetas de las canciones. Ejemplo: process.bat --regenerate "output\\Artista - Título" --tone overdrive',
+                  'Give the songs\' folders. Example: process.bat --regenerate "output\\Artist - Title" --tone overdrive'))
+            sys.exit(2)
+        simple = "igual" if a.simple is None else {"no": None, "bar": 0, "half": 1, "beat": 2, "eighth": 3}[a.simple]
+        mal = 0
+        for e in a.entradas:
+            log(f"{Path(e).name}:")
+            rutas, error, cambios = regenerar(e, tono=a.tone, pua=None if a.pick is None else a.pick == "yes",
+                                              velocidad=a.scroll, simple=simple, dd_inicial=a.start_difficulty,
+                                              compilar=COMPILAR)
+            if cambios:
+                log("  " + "; ".join(cambios))
+            for r in rutas:
+                log(f"  -> {r}")
+            if error and (COMPILAR or not cambios):
+                mal += 1; log(f"  ERROR: {error}")
+        sys.exit(1 if mal else 0)
     espera = 60
     try:
         espera = int(conf.get("question_timeout", 60))
@@ -3359,6 +3401,171 @@ def main():
     if not _ENVIO_FALLIDO[0]:
         reenviar_pendientes()
     mover_entradas(preguntas, rutas_ok, rutas_descartadas)
+
+
+# ---------------- regenerating a processed song ----------------
+ANALISIS = "analisis.json"   # saved in each song's folder since 0.5.1: what's needed to rewrite its files
+
+
+def _a_json(o):
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, Path):
+        return str(o)
+    raise TypeError(type(o))
+
+
+def guardar_analisis(carpeta, datos):
+    import json
+    try:
+        (Path(carpeta) / ANALISIS).write_text(json.dumps(datos, default=_a_json, ensure_ascii=False),
+                                              encoding="utf-8")
+    except Exception as ex:
+        log(T(f"  Aviso: no se pudo guardar {ANALISIS}: {ex}", f"  Warning: couldn't save {ANALISIS}: {ex}"))
+
+
+def leer_cancion(carpeta):
+    """What can be changed in a processed song and its current values. Works for songs from any version;
+    without analisis.json (before 0.5.1) only tone, pick and scroll speed can be changed."""
+    import json
+    carpeta = Path(carpeta)
+    pr = next(iter(sorted(carpeta.glob("*.rs2dlc"))), None)
+    if pr is None:
+        return None
+    proyecto = json.loads(pr.read_text(encoding="utf-8"))
+    bajos = [a["Fields"][0] for a in proyecto["Arrangements"] if a["Case"] == "Instrumental"]
+    an = carpeta / ANALISIS
+    analisis = json.loads(an.read_text(encoding="utf-8")) if an.exists() else None
+    diag = {}
+    if (carpeta / "diagnostico.json").exists():
+        try:
+            diag = json.loads((carpeta / "diagnostico.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"carpeta": carpeta, "proyecto": pr, "datos": proyecto, "analisis": analisis, "diag": diag,
+            "pua": bool(bajos[0].get("BassPicked")) if bajos else False,
+            "velocidad": bajos[0].get("ScrollSpeed") if bajos else None,
+            "simple": analisis.get("arreglo_simple") if analisis else (len(bajos) > 1 or None),
+            "dd_inicial": analisis.get("dd_inicial") if analisis else None,
+            "tono": (analisis or {}).get("origen_tono") or (diag.get("tono") or {}).get("elegido"),
+            "completo": analisis is not None}
+
+
+def regenerar(carpeta, tono=None, pua=None, velocidad=None, simple="igual", dd_inicial=None, compilar=True):
+    """Rewrites a processed song's arrangement and project with other settings and rebuilds its .psarc,
+    without analysing the audio again (seconds instead of minutes).
+      tono:       bass_tone value (auto, clean, overdrive... or an official tone name)
+      pua:        True / False
+      velocidad:  scroll speed (0.5-5)
+      simple:     simplified arrangement: None (none), 0 bar, 1 half, 2 beat, 3 eighth  [needs analisis.json]
+      dd_inicial: starting difficulty in %                                           [needs analisis.json]
+    Returns (psarc_paths, error, changes)."""
+    import json, re as _re
+    global PUA_FORZADA, DD_INICIAL, ARREGLO_SIMPLE
+    info = leer_cancion(carpeta)
+    if info is None:
+        return [], T("no hay proyecto .rs2dlc en esa carpeta", "no .rs2dlc project in that folder"), []
+    carpeta, proyecto, an = info["carpeta"], info["datos"], info["analisis"]
+    if (simple != "igual" or dd_inicial is not None) and an is None:
+        return [], T("esta canción se procesó con una versión anterior a la 0.5.1: para cambiar el arreglo "
+                     "simplificado o la dificultad hay que volver a procesarla (--force)",
+                     "this song was processed with a version older than 0.5.1: to change the simplified "
+                     "arrangement or the difficulty it has to be processed again (--force)"), []
+    cambios = []
+    DIAG.clear()
+    meta = (an or {}).get("meta") or {"artista": proyecto["ArtistName"]["Value"], "titulo": proyecto["Title"]["Value"]}
+    if pua is None:
+        pua = info["pua"]
+    elif pua != info["pua"]:
+        cambios.append(T(f"púa: {si_no_txt(pua)}", f"pick: {si_no_txt(pua)}"))
+    if tono is not None:
+        obj, origen = _resolver_tono(alias_tono(tono), meta["artista"], meta["titulo"], pua)
+        proyecto["Tones"] = [obj]
+        cambios.append(T(f"tono: {origen}", f"tone: {origen}"))
+        if an is not None:
+            an["tono"], an["origen_tono"] = obj, origen
+    if velocidad is not None:
+        velocidad = round(min(5.0, max(0.5, float(velocidad))), 2)
+        cambios.append(T(f"velocidad: {velocidad}", f"scroll speed: {velocidad}"))
+    nombre = info["proyecto"].stem
+    if an is not None and (simple != "igual" or dd_inicial is not None or pua != info["pua"]):
+        # rewrite the XMLs from the saved analysis with the new settings
+        guardados = PUA_FORZADA, DD_INICIAL, ARREGLO_SIMPLE
+        try:
+            PUA_FORZADA = pua
+            DD_INICIAL = float(dd_inicial) if dd_inicial is not None else float(an.get("dd_inicial") or 0)
+            ARREGLO_SIMPLE = an.get("arreglo_simple") if simple == "igual" else simple
+            completo = np.array(an["completo"]); compases = [tuple(c) for c in an["compases"]]
+            tab = [tuple(n) for n in an["tab"]]
+            xml_path = carpeta / f"{nombre}_bass_RS2.xml"
+            escribir_xml_rs(xml_path, completo, compases, tab, an["cuerdas"], an["cents"], pua, meta,
+                            an["duracion_ogg"])
+            xml_simple = None
+            if ARREGLO_SIMPLE is not None:
+                tab_s = tab_simplificada(tab, compases, completo, ARREGLO_SIMPLE)
+                if 8 <= len(tab_s) <= 0.85 * len(tab):
+                    xml_simple = carpeta / f"{nombre}_bass2_RS2.xml"
+                    escribir_xml_rs(xml_simple, completo, compases, tab_s, an["cuerdas"], an["cents"], pua,
+                                    meta, an["duracion_ogg"], principal=False)
+            if xml_simple is None and (carpeta / f"{nombre}_bass2_RS2.xml").exists():
+                (carpeta / f"{nombre}_bass2_RS2.xml").unlink()
+            if dd_inicial is not None:
+                cambios.append(T(f"dificultad inicial: {DD_INICIAL:.0f} %", f"starting difficulty: {DD_INICIAL:.0f} %"))
+                an["dd_inicial"] = DD_INICIAL
+            if simple != "igual":
+                cambios.append(T("arreglo simplificado: ", "simplified arrangement: ")
+                               + ((NOMBRES_SIMPLE if IDIOMA == "es" else NOMBRES_SIMPLE_EN)[ARREGLO_SIMPLE]
+                                  if xml_simple else "no"))
+                an["arreglo_simple"] = ARREGLO_SIMPLE
+            an["pua"] = pua
+            vel = velocidad if velocidad is not None else info["velocidad"]
+            escribir_proyecto(info["proyecto"], meta, xml_path, carpeta / f"{nombre}.ogg",
+                              carpeta / f"{nombre}_preview.ogg", an["inicio_preview"], carpeta / an["portada"],
+                              an["cuerdas"], an["cents"], pua, an["tono"], xml_simple=xml_simple,
+                              xml_letra=carpeta / an["letra"] if an.get("letra") else None, velocidad=vel)
+            if velocidad is not None:
+                an["velocidad"] = velocidad
+            guardar_analisis(carpeta, an)
+        finally:
+            PUA_FORZADA, DD_INICIAL, ARREGLO_SIMPLE = guardados
+    else:
+        # older songs (or only tone / speed): edit the project and the XMLs in place
+        for a in proyecto["Arrangements"]:
+            if a["Case"] == "Instrumental":
+                f = a["Fields"][0]
+                f["BassPicked"] = bool(pua)
+                if velocidad is not None:
+                    f["ScrollSpeed"] = velocidad
+                x = carpeta / f["XML"]
+                if x.exists():
+                    t = x.read_text(encoding="utf-8")
+                    x.write_text(_re.sub(r'bassPick="\d"', f'bassPick="{int(pua)}"', t), encoding="utf-8")
+        info["proyecto"].write_text(json.dumps(proyecto, ensure_ascii=False, indent=2), encoding="utf-8")
+        if an is not None:
+            if velocidad is not None:
+                an["velocidad"] = velocidad
+            an["pua"] = pua
+            guardar_analisis(carpeta, an)
+    if not cambios:
+        cambios.append(T("sin cambios", "no changes"))
+    try:
+        with open(carpeta / "informe.txt", "a", encoding="utf-8") as f:
+            f.write(f"\n{time.strftime('%Y-%m-%d %H:%M')} " + T("Regenerada: ", "Regenerated: ") + "; ".join(cambios) + "\n")
+    except OSError:
+        pass
+    problemas = comprobar_dlc_builder(info["proyecto"])
+    if problemas:
+        return [], T("el proyecto tiene problemas: ", "the project has problems: ") + "; ".join(problemas), cambios
+    if not compilar:
+        return [], None, cambios
+    rutas, error = compilar_psarc(info["proyecto"], CARPETA_PSARC, WWISE)
+    return rutas, error, cambios
+
+
+def si_no_txt(v):
+    return T("sí", "yes") if v else T("no", "no")
 
 
 def reempaquetar(entradas):
