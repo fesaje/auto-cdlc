@@ -7,7 +7,7 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
-- **0.4.3** (unreleased): the update download retries, and if GitHub's code server can't be reached it
+- **0.4.3**: the update download retries, and if GitHub's code server can't be reached it
   falls back to the Windows package attached to the release. Results that can't be sent (e.g. Cloudflare
   IPs blocked in Spain during football matches) are saved in `envios_pendientes` and sent in the next batch.
   New `--rebuild` (`--reempaquetar`): rebuilds the `.psarc` of processed songs after hand-editing their XMLs,
