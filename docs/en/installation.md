@@ -34,7 +34,7 @@ It's the same one DLC Builder uses.
 
 auto-cdlc looks for it in `Program Files\Audiokinetic` and in the `WWISEROOT` variable (the Wwise installer
 sets it). If it still isn't found, put the Wwise folder or the path to `WwiseConsole.exe` in
-`configuracion.txt` (key `wwise`).
+`config.txt` (key `wwise`).
 
 ## 2. auto-cdlc
 
@@ -42,7 +42,7 @@ sets it). If it still isn't found, put the Wwise folder or the path to `WwiseCon
    [latest release](https://github.com/fesaje/auto-cdlc/releases/latest).
 2. Unzip it into one of your own folders, for example `Documents\auto-cdlc`. Better not under
    `Program Files`, because the program writes into its own folder.
-3. Double-click **`instalar.bat`**. It first asks for the language (Spanish or English) and then does four
+3. Double-click **`install.bat`**. It first asks for the language (Spanish or English) and then does four
    things:
    1. installs `uv`, a Python manager that doesn't touch your system's Python;
    2. sets up Python 3.13 and the libraries (about 1 GB the first time);
@@ -50,13 +50,16 @@ sets it). If it still isn't found, put the Wwise folder or the path to `WwiseCon
    4. checks for Wwise. If it finds Rocksmith's `dlc` folder in Steam, it offers to save the `.psarc`
       files straight there.
 
-> If you clone the repository with git instead of downloading the zip, `instalar.bat` downloads
+> If you clone the repository with git instead of downloading the zip, `install.bat` downloads
 > `cdlc-pack` from the latest release.
+
+> **Coming from 0.4 or earlier?** Just run `process.bat` (or the old `procesar.bat`) and accept the update.
+> On the first run your folders and settings are converted to the new English names automatically.
 
 ## 3. First test
 
-1. Copy an mp3 into the `entrada` folder.
-2. Double-click **`procesar.bat`**, answer the questions (Enter keeps the default) and wait.
+1. Copy an mp3 into the `input` folder.
+2. Double-click **`process.bat`**, answer the questions (Enter keeps the default) and wait.
 3. The first song takes longer because it downloads:
    - the bass separation model (about 30 MB);
    - the Beat This! beat model (about 80 MB);
@@ -68,9 +71,9 @@ sets it). If it still isn't found, put the Wwise folder or the path to `WwiseCon
 
 | Symptom | Fix |
 |---|---|
-| `instalar.bat` fails installing uv | Install it manually from <https://docs.astral.sh/uv/> and run `instalar.bat` again. |
-| "uv not found" when processing | Close the window and open `procesar.bat` again. If it persists, run `instalar.bat` again. |
-| The report says "sin psarc … Wwise" | Wwise wasn't found: install it or put its path in `configuracion.txt`. Meanwhile you can build by hand with DLC Builder (see [usage](usage.md#building-or-editing-by-hand)). |
+| `install.bat` fails installing uv | Install it manually from <https://docs.astral.sh/uv/> and run `install.bat` again. |
+| "uv not found" when processing | Close the window and open `process.bat` again. If it persists, run `install.bat` again. |
+| The report says "sin psarc … Wwise" | Wwise wasn't found: install it or put its path in `config.txt`. Meanwhile you can build by hand with DLC Builder (see [usage](usage.md#building-or-editing-by-hand)). |
 | The song doesn't show up in the game | Check that the `.psarc` is in Rocksmith's `dlc` folder and that the CDLC Enabler is installed. |
 | The antivirus complains | It's usually about the CDLC Enabler or `cdlc-pack.exe` (an unsigned executable). Add an exception for those folders. |
 

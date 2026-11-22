@@ -34,7 +34,7 @@ Es el mismo que usa DLC Builder.
 
 auto-cdlc lo busca solo en `Archivos de programa\Audiokinetic` y en la variable `WWISEROOT` (la crea el
 instalador de Wwise). Si aun así no lo encuentra, pon la carpeta de Wwise o la ruta de `WwiseConsole.exe`
-en `configuracion.txt` (clave `wwise`).
+en `config.txt` (clave `wwise`).
 
 ## 2. auto-cdlc
 
@@ -42,7 +42,7 @@ en `configuracion.txt` (clave `wwise`).
    [última versión](https://github.com/fesaje/auto-cdlc/releases/latest).
 2. Descomprímelo en una carpeta tuya, por ejemplo `Documentos\auto-cdlc`. Mejor que no sea
    `Archivos de programa`, porque el programa escribe en su propia carpeta.
-3. Haz doble clic en **`instalar.bat`**. Primero pregunta el idioma (español o inglés) y después hace
+3. Haz doble clic en **`install.bat`**. Primero pregunta el idioma (español o inglés) y después hace
    cuatro cosas:
    1. instala `uv`, un gestor de Python que no toca el Python de tu sistema;
    2. prepara Python 3.13 y las librerías (alrededor de 1 GB la primera vez);
@@ -50,13 +50,16 @@ en `configuracion.txt` (clave `wwise`).
    4. comprueba si está Wwise. Si encuentra la carpeta `dlc` de Rocksmith en Steam, te ofrece dejar ahí
       los `.psarc` directamente.
 
-> Si clonas el repositorio con git en vez de bajar el zip, `instalar.bat` descarga `cdlc-pack` de la
+> Si clonas el repositorio con git en vez de bajar el zip, `install.bat` descarga `cdlc-pack` de la
 > última versión publicada.
+
+> **¿Vienes de la 0.4 o anterior?** Ejecuta `process.bat` (o el antiguo `procesar.bat`) y acepta la
+> actualización. La primera vez tus carpetas y tu configuración pasan solas a los nombres nuevos en inglés.
 
 ## 3. Primera prueba
 
-1. Copia un mp3 en la carpeta `entrada`.
-2. Haz doble clic en **`procesar.bat`**, contesta a las preguntas (Intro deja el valor por defecto) y
+1. Copia un mp3 en la carpeta `input`.
+2. Haz doble clic en **`process.bat`**, contesta a las preguntas (Intro deja el valor por defecto) y
    espera.
 3. La primera canción tarda más, porque descarga:
    - el modelo de separación del bajo (unos 30 MB);
@@ -69,9 +72,9 @@ en `configuracion.txt` (clave `wwise`).
 
 | Síntoma | Solución |
 |---|---|
-| `instalar.bat` falla al instalar uv | Instálalo a mano desde <https://docs.astral.sh/uv/> y vuelve a ejecutar `instalar.bat`. |
-| "No encuentro uv" al procesar | Cierra la ventana y vuelve a abrir `procesar.bat`. Si sigue, ejecuta otra vez `instalar.bat`. |
-| El informe dice "sin psarc … Wwise" | No encuentra Wwise: instálalo o pon su ruta en `configuracion.txt`. Mientras, puedes compilar a mano con DLC Builder (ver [uso](uso.md#compilar-o-retocar-a-mano)). |
+| `install.bat` falla al instalar uv | Instálalo a mano desde <https://docs.astral.sh/uv/> y vuelve a ejecutar `install.bat`. |
+| "No encuentro uv" al procesar | Cierra la ventana y vuelve a abrir `process.bat`. Si sigue, ejecuta otra vez `install.bat`. |
+| El informe dice "sin psarc … Wwise" | No encuentra Wwise: instálalo o pon su ruta en `config.txt`. Mientras, puedes compilar a mano con DLC Builder (ver [uso](uso.md#compilar-o-retocar-a-mano)). |
 | La canción no aparece en el juego | Comprueba que el `.psarc` está en la carpeta `dlc` de Rocksmith y que el CDLC Enabler está instalado. |
 | El antivirus avisa | Suele ser por el CDLC Enabler o por `cdlc-pack.exe` (un ejecutable sin firmar). Añade una excepción para esas carpetas. |
 

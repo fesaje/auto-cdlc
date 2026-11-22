@@ -1,22 +1,29 @@
 """
-cdlc_bajo.py - De mp3 a material para Editor on Fire (bajo de 4 cuerdas, afinación estándar).
+auto_cdlc.py - From audio files to bass CDLC for Rocksmith 2014 (4-string bass).
 
-Uso:
-    uv run cdlc_bajo.py                      -> procesa todo lo que haya en la carpeta "entrada"
-    uv run cdlc_bajo.py cancion.mp3 otra.flac -> procesa esos archivos
-    uv run cdlc_bajo.py carpeta/              -> procesa todos los audios de esa carpeta
-Opciones:
-    --salida CARPETA   carpeta de resultados (por defecto "salida")
-    --forzar           vuelve a procesar canciones que ya tienen resultados
+Usage (normally through process.bat):
+    uv run auto_cdlc.py                        -> processes everything in the "input" folder
+    uv run auto_cdlc.py song.mp3 other.flac    -> processes those files
+    uv run auto_cdlc.py folder/                -> processes every audio file in that folder
+    uv run auto_cdlc.py --rebuild output/<song> -> rebuilds the .psarc after editing the XMLs by hand
+Main options (run with --help for all of them):
+    --output FOLDER    results folder (default "output")
+    --force            process again songs that already have results
 
-Por cada canción crea salida/<nombre>/ con:
-    <nombre>.ogg       audio con silencio inicial (el que se abre en EOF con File > New)
-    <nombre>.svl       mapa de beats (EOF: File > Import > Sonic Visualiser)
-    <nombre>.gp5       tablatura de bajo (EOF: File > Import > Guitar Pro > PART REAL_BASS)
-    <nombre>_AB.mp3    izquierda = bajo real, derecha = tablatura sintetizada (para revisar con cascos)
-    <nombre>_clics.mp3 canción con un clic en cada beat (agudo en el tiempo 1)
-    <nombre>.mid       la transcripción en MIDI
-    informe.txt        datos del proceso
+For each song it creates output/<name>/ with:
+    <name>.ogg          audio with a silent lead-in (open it in EOF with File > New)
+    <name>.svl          beat map (EOF: File > Import > Sonic Visualiser)
+    <name>.gp5          bass tab (EOF: File > Import > Guitar Pro > PART REAL_BASS)
+    <name>_bass_RS2.xml Rocksmith arrangement (plus _bass2 simplified and _vocals lyrics)
+    <name>.rs2dlc       DLC Builder project
+    <name>_AB.mp3       left = real bass, right = synthesised tab (check with headphones)
+    <name>_clics.mp3    the song with a click on every beat (higher on beat 1)
+    <name>.mid          the transcription as MIDI
+    informe.txt         processing report
+and the .psarc in the psarc folder (or the one set in config.txt).
+
+Note: identifiers and most of the comments in the analysis code are still in Spanish; the parts users
+and contributors touch most (configuration, batches, packaging, updates) are commented in English.
 """
 import re
 import argparse
@@ -35,24 +42,24 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.4.3"
+VERSION = "0.5.0"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
-ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"            # servidor de envíos voluntarios (Cloudflare Worker); configuracion.txt: servidor_envios
-CONF_ENVIO = "preguntar"
-ENVIAR = False             # se decide en cada tanda (enviar_resultados = preguntar / si / no)
-SIN_INTERNET = False      # --sin-internet o configuracion.txt
-DIAG = {}                 # diagnóstico de la canción en curso (lo rellenan las etapas; va a diagnostico.json)
-COMPILAR = True           # compilar .psarc con herramientas/cdlc-pack
+ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
+CONF_ENVIO = "preguntar"  # send_results: preguntar (ask) / si (yes) / no
+ENVIAR = False            # decided for each batch
+SIN_INTERNET = False      # --offline or online = no in config.txt
+DIAG = {}                 # diagnostics of the current song (filled by each stage; saved to diagnostico.json)
+COMPILAR = True           # build the .psarc with tools/cdlc-pack
 CARPETA_PSARC = None
 WWISE = None
-SIN_PSARC = []   # canciones de la tanda que terminaron sin .psarc: (archivo, motivo)
-REVISAR = []     # canciones de la tanda con indicios de que la tablatura no es fiable: (archivo, nivel, motivos)
+SIN_PSARC = []   # songs of the batch that ended without a .psarc: (file, reason)
+REVISAR = []     # songs of the batch whose tab may be unreliable: (file, level, reasons)
 
 
 def motivos_revisar(diag):
-    """Indicios de que la tablatura saldrá floja, con los umbrales sacados de los envíos: pulso que salta,
-    tiempo 1 dudoso, muchos compases raros, notas que no encajan en la rejilla o tono casi sin medir."""
+    """Signs that the tab may be weak, with thresholds taken from the uploaded results: unsteady beat,
+    doubtful downbeat, many odd bars, notes that don't fit the grid or barely measurable pitch."""
     b, p = diag.get("beats", {}), diag.get("deteccion_pulso", {})
     q, t = diag.get("cuantizacion", {}), diag.get("transcripcion", {})
     m = []
@@ -70,21 +77,21 @@ def motivos_revisar(diag):
         m.append(T("tono del bajo poco claro", "unclear bass pitch"))
     return m
 ATAQUE_POR_PICO = True     # ritmo de cada nota desde el pico del ataque (ver transcribir)
-PARTIR_REPETIDAS = True    # cortar notas largas donde el bajo vuelve a pulsar; configuracion.txt: partir_repetidas
-UMBRAL_REATAQUE_DB = 3.0   # subida de energía mínima para considerar un nuevo golpe; configuracion.txt: umbral_reataque_db
-LETRA = True               # buscar la letra en LRCLIB; configuracion.txt: letra
+PARTIR_REPETIDAS = True    # split long notes where the bass plucks again; config.txt: split_repeated
+UMBRAL_REATAQUE_DB = 3.0   # minimum energy rise to count as a new pluck; config.txt: reattack_threshold_db
+LETRA = True               # look up lyrics on LRCLIB; config.txt: lyrics
 ARREGLO_SIMPLE = 2         # None = sin segundo arreglo; 0 compás, 1 medio compás, 2 tiempo, 3 corchea
 NOMBRES_SIMPLE = {0: "una nota por compás", 1: "una por medio compás", 2: "una por tiempo", 3: "una por corchea"}
 NOMBRES_SIMPLE_EN = {0: "one note per bar", 1: "one per half bar", 2: "one per beat", 3: "one per eighth note"}
-VELOCIDAD_SCROLL = 1.3     # velocidad de las notas en el juego; configuracion.txt: velocidad_scroll
+VELOCIDAD_SCROLL = 1.3     # in-game note speed; config.txt: scroll_speed
 VELOCIDAD_AUTO = False     # "auto": proporcional al tempo (VELOCIDAD_SCROLL es la de 120 BPM)
 VELOCIDAD_LIMITES = (0.9, 2.2)
 MADMOM_INESTABLE = 0.03    # % de beats de madmom fuera de sitio a partir del cual se usan los de Beat This!
-TONO_MODO = "auto"         # tono del bajo en el juego; configuracion.txt: tono_bajo
-TONO_CREPE = True          # tono de cada nota con CREPE (más fiable en graves que pYIN); configuracion.txt: tono_crepe
-DD_INICIAL = 0            # % de notas del nivel más fácil; configuracion.txt: dificultad_inicial
-DD_MODO = "propia"        # propia | dlcbuilder | ninguna; configuracion.txt: dificultad
-UMBRAL_CENTS = 30.0       # desvío mínimo (cents) para cambiar el Tuning Pitch; configuracion.txt: umbral_cents
+TONO_MODO = "auto"         # in-game bass tone; config.txt: bass_tone
+TONO_CREPE = True          # pitch of each note with CREPE (more reliable on low notes than pYIN); config.txt: crepe_pitch
+DD_INICIAL = 0            # % of notes in the easiest level; config.txt: start_difficulty
+DD_MODO = "propia"        # propia (own) | dlcbuilder | ninguna (none); config.txt: difficulty
+UMBRAL_CENTS = 30.0       # minimum deviation (cents) to change the Tuning Pitch; config.txt: cents_threshold
 EXTENSIONES = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".wma"}
 
 # ---------------- parámetros (los que funcionaron en las pruebas) ----------------
@@ -122,11 +129,11 @@ def log(msg):
     print(msg, flush=True)
 
 
-IDIOMA = "es"              # idioma de la interfaz: es / en (configuracion.txt: idioma)
+IDIOMA = "es"              # interface language: es / en (config.txt: language)
 
 
 def T(es, en):
-    """Texto en el idioma de la interfaz."""
+    """Text in the interface language."""
     return en if IDIOMA == "en" else es
 
 
@@ -263,7 +270,7 @@ _INDICES = {}
 
 
 def _indice_salida(salida):
-    """{archivo de entrada: carpeta} de lo ya procesado en 'salida' (se lee una vez por ejecución)."""
+    """{archivo de entrada: carpeta} de lo ya procesado en 'output' (se lee una vez por ejecución)."""
     import json
     clave = str(Path(salida).resolve())
     if clave not in _INDICES:
@@ -354,7 +361,7 @@ class SinBajo(RuntimeError):
 
 def separar_bajo(wav_mezcla, tmp):
     from audio_separator.separator import Separator
-    modelos = AQUI / "modelos"
+    modelos = AQUI / "models"
     modelos.mkdir(exist_ok=True)
     sep = Separator(output_dir=str(tmp), model_file_dir=str(modelos), output_format="WAV",
                     log_level=40)
@@ -376,7 +383,7 @@ BEAT_THIS_URLS = ["https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/
 def modelo_beat_this():
     """Ruta del modelo de Beat This! (se descarga una vez y se comprueba su huella SHA-256)."""
     import hashlib, urllib.request
-    ruta = AQUI / "modelos" / "beat_this-final0.ckpt"
+    ruta = AQUI / "models" / "beat_this-final0.ckpt"
 
     def valido(r):
         if not r.exists() or r.stat().st_size < 50_000_000:
@@ -1095,7 +1102,7 @@ def _norm(t):
 def base_tonos():
     """Base de tonos oficiales de Rocksmith (la misma que descarga DLC Builder). Se baja una vez (8 MB)."""
     import urllib.request
-    ruta = AQUI / "modelos" / "tonos_oficiales.db"
+    ruta = AQUI / "models" / "tonos_oficiales.db"
     if ruta.exists():
         return ruta
     memo = ruta.with_suffix(".fallo")
@@ -1972,7 +1979,7 @@ def procesar(ruta, salida, forzar):
     import librosa, pretty_midi, soundfile as sf
     nombre, dest, artista, titulo, fuente, etiquetas = destino(ruta, salida)
     if (dest / f"{nombre}.gp5").exists() and not forzar:
-        log(T("  (ya procesada, la salto; usa --forzar para repetir)", "  (already processed, skipping; use --forzar to redo it)"))
+        log(T("  (ya procesada, la salto; usa --force para repetir)", "  (already processed, skipping; use --force to redo it)"))
         return "saltada", ""
     dest.mkdir(parents=True, exist_ok=True)
     log(f"  {artista} - {titulo}  ({T('de', 'from')} {fuente_txt(fuente)})")
@@ -2155,7 +2162,7 @@ def procesar(ruta, salida, forzar):
                           xml_simple=xml_simple, xml_letra=xml_letra, velocidad=velocidad)
         problemas = comprobar_dlc_builder(dest / f"{nombre}.rs2dlc")
         marca("escribir_archivos")
-        psarcs, error_psarc = [], T("desactivada (--sin-psarc)", "disabled (--sin-psarc)")
+        psarcs, error_psarc = [], T("desactivada (--no-psarc)", "disabled (--no-psarc)")
         if COMPILAR and not problemas:
             log(T("  [6/6] Compilando el .psarc (Wwise + DD)...", "  [6/6] Building the .psarc (Wwise + DD)..."))
             psarcs, error_psarc = compilar_psarc(dest / f"{nombre}.rs2dlc", CARPETA_PSARC, WWISE)
@@ -2310,10 +2317,36 @@ def procesar(ruta, salida, forzar):
 
 
 # ---------------- 7. compilación a .psarc (cdlc-pack, librerías de DLC Builder) ----------------
-def leer_configuracion():
-    """configuracion.txt junto al script: líneas 'clave = valor' (# para comentarios)."""
+# ---------------- configuration and folder layout ----------------
+# Since 0.5 the user-facing names are in English. Old names are still understood (keys, values and
+# command-line options) and an existing install is migrated once (see migrar_instalacion).
+CONFIG = AQUI / "config.txt"
+CONFIG_VIEJA = AQUI / "configuracion.txt"           # up to 0.4.x
+CLAVES_VIEJAS = {                                    # Spanish key (<= 0.4.x) -> English key
+    "idioma": "language", "carpeta_psarc": "psarc_folder", "compilar_psarc": "build_psarc",
+    "buscar_caratulas": "online", "umbral_cents": "cents_threshold", "dificultad": "difficulty",
+    "dificultad_inicial": "start_difficulty", "partir_repetidas": "split_repeated",
+    "umbral_reataque_db": "reattack_threshold_db", "tono_crepe": "crepe_pitch", "tono_bajo": "bass_tone",
+    "velocidad_scroll": "scroll_speed", "arreglo_simple": "simple_arrangement", "letra": "lyrics",
+    "espera_preguntas": "question_timeout", "buscar_actualizaciones": "check_updates",
+    "servidor_envios": "upload_server", "enviar_resultados": "send_results",
+}
+VALORES_VIEJOS = {                                   # Spanish value -> English value, per key
+    "*": {"si": "yes", "sí": "yes"},
+    "difficulty": {"propia": "own", "ninguna": "none"},
+    "simple_arrangement": {"tiempo": "beat", "medio": "half", "medio compas": "half", "medio compás": "half",
+                           "compas": "bar", "compás": "bar", "corchea": "eighth", "ninguno": "no"},
+    "bass_tone": {"limpio": "clean", "limpio_pua": "clean_pick", "saturado": "overdrive",
+                  "distorsion": "distortion", "distorsión": "distortion"},
+    "send_results": {"preguntar": "ask"},
+}
+CARPETAS_VIEJAS = [("entrada", "input"), ("salida", "output"), ("modelos", "models"),
+                   ("herramientas", "tools"), ("envios_pendientes", "pending_uploads")]
+
+
+def _leer_pares(ruta):
+    """'key = value' lines of a config file (# starts a comment); keys lower-case, empty values skipped."""
     conf = {}
-    ruta = AQUI / "configuracion.txt"
     if ruta.exists():
         for linea in ruta.read_text(encoding="utf-8-sig").splitlines():
             linea = linea.split("#", 1)[0].strip()
@@ -2324,19 +2357,161 @@ def leer_configuracion():
     return conf
 
 
+def _traducir(clave, valor):
+    """English key and value for a (possibly old, Spanish) key and value."""
+    clave = CLAVES_VIEJAS.get(clave, clave)
+    v = valor.strip()
+    nuevo = VALORES_VIEJOS.get(clave, {}).get(v.lower()) or VALORES_VIEJOS["*"].get(v.lower())
+    return clave, nuevo or v
+
+
+def leer_configuracion():
+    """config.txt next to the script (or the old configuracion.txt), with keys and values in English."""
+    ruta = CONFIG if CONFIG.exists() else CONFIG_VIEJA
+    return dict(_traducir(k, v) for k, v in _leer_pares(ruta).items())
+
+
+def plantilla_config(idioma):
+    return AQUI / "templates" / f"config.{'en' if idioma == 'en' else 'es'}.txt"
+
+
+def escribir_config(valores, idioma):
+    """Creates config.txt from the template in the given language, filling in the given values."""
+    texto = plantilla_config(idioma).read_text(encoding="utf-8-sig")
+    hechas = set()
+
+    def poner(m):
+        k = m.group(1).lower()
+        if k in valores:
+            hechas.add(k)
+            return f"{m.group(1)} = {valores[k]}"
+        return m.group(0)
+    texto = re.sub(r"(?m)^([A-Za-z_]+) *=[^\r\n]*", poner, texto)
+    resto = [k for k in valores if k not in hechas]
+    if resto:                                        # keys not in the template (e.g. upload_server)
+        texto = texto.rstrip() + "\n\n" + "\n".join(f"{k} = {valores[k]}" for k in resto) + "\n"
+    CONFIG.write_text(texto.replace("\r\n", "\n").replace("\n", "\r\n"), encoding="utf-8")
+
+
+def poner_clave(clave, valor):
+    """Sets 'clave = valor' in config.txt (replacing the line if the key is there, appending it if not)."""
+    texto = CONFIG.read_text(encoding="utf-8-sig")
+    linea = f"{clave} = {valor}"
+    nuevo, n = re.subn(rf"(?m)^{re.escape(clave)} *=[^\r\n]*", lambda m: linea, texto)
+    if not n:
+        nuevo = texto.rstrip("\r\n") + f"\r\n\r\n{linea}\r\n"
+    CONFIG.write_text(nuevo, encoding="utf-8")
+
+
+def preparar_instalacion(idioma):
+    """Called by install.bat once the libraries are in place: migrates an old install, creates config.txt
+    in the chosen language, offers Rocksmith's dlc folder for the .psarc files and checks Wwise."""
+    global IDIOMA
+    IDIOMA = "en" if (idioma or "")[:2].lower() == "en" else "es"
+    migrar_instalacion()
+    if not CONFIG.exists():
+        escribir_config({"language": IDIOMA}, IDIOMA)
+    elif not leer_configuracion().get("language"):
+        poner_clave("language", IDIOMA)
+    conf = leer_configuracion()
+    IDIOMA = "en" if conf.get("language", IDIOMA)[:2].lower() == "en" else "es"
+    ww = buscar_wwise(conf.get("wwise"))
+    if ww:
+        log(T(f"  Wwise encontrado: {ww}", f"  Wwise found: {ww}"))
+    else:
+        log(T("  AVISO: no encuentro Wwise. Hace falta para convertir el audio al formato de Rocksmith.\n"
+              "  Instala Wwise 2019, 2021, 2022 o 2023 desde https://ignition4.customsforge.com/tools/wwise\n"
+              "  o pon su carpeta en config.txt, clave wwise.",
+              "  WARNING: Wwise not found. It's needed to convert the audio to Rocksmith's format.\n"
+              "  Install Wwise 2019, 2021, 2022 or 2023 from https://ignition4.customsforge.com/tools/wwise\n"
+              "  or put its folder in config.txt, key wwise."))
+    dlc = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam" / "steamapps" / \
+        "common" / "Rocksmith2014" / "dlc"
+    if dlc.is_dir() and not conf.get("psarc_folder"):
+        log(T(f"\n  He encontrado la carpeta dlc de Rocksmith:\n    {dlc}",
+              f"\n  Found Rocksmith's dlc folder:\n    {dlc}"))
+        try:
+            r = input(T("  ¿Dejar ahí los .psarc directamente? (s/n) [s]: ",
+                        "  Save the .psarc files straight there? (y/n) [y]: ")).strip().lower()
+        except EOFError:
+            r = "n"
+        if r[:1] in ("", "s", "y"):
+            poner_clave("psarc_folder", str(dlc))
+            log(T("  Hecho: los .psarc irán a la carpeta dlc de Rocksmith.",
+                  "  Done: the .psarc files will go to Rocksmith's dlc folder."))
+    return 0
+
+
+def _mover_contenido(viejo, nuevo):
+    """Moves everything in folder 'viejo' into 'nuevo' (merging subfolders). If a file exists in both,
+    the one in 'nuevo' wins (it comes from the newer release). Removes 'viejo' once empty."""
+    nuevo.mkdir(parents=True, exist_ok=True)
+    for x in list(viejo.iterdir()):
+        y = nuevo / x.name
+        if x.is_dir() and y.is_dir():
+            _mover_contenido(x, y)
+        elif not y.exists():
+            shutil.move(str(x), str(y))
+        elif x.is_file():
+            x.unlink()
+    try:
+        viejo.rmdir()
+    except OSError:
+        pass
+
+
+def migrar_instalacion():
+    """One-off migration of a 0.4.x install to the English layout: folders (entrada -> input,
+    salida -> output, modelos -> models, herramientas -> tools, envios_pendientes -> pending_uploads),
+    configuracion.txt -> config.txt (keeping a .bak copy) and files that are no longer used.
+    Safe to run every time: it does nothing when there is nothing to migrate."""
+    hecho = []
+    for viejo, nuevo in CARPETAS_VIEJAS:
+        if (AQUI / viejo).is_dir():
+            try:
+                _mover_contenido(AQUI / viejo, AQUI / nuevo)
+                hecho.append(f"{viejo} -> {nuevo}")
+            except Exception as ex:
+                log(f"  ! {viejo} -> {nuevo}: {ex}")
+    for viejo, nuevo in (("procesadas", "processed"), ("descartadas", "discarded")):
+        if (AQUI / "input" / viejo).is_dir():
+            _mover_contenido(AQUI / "input" / viejo, AQUI / "input" / nuevo)
+    if (AQUI / "output" / "ajustes_discos.json").exists() and not (AQUI / "output" / "album_settings.json").exists():
+        (AQUI / "output" / "ajustes_discos.json").rename(AQUI / "output" / "album_settings.json")
+    if CONFIG_VIEJA.exists() and not CONFIG.exists() and plantilla_config("es").exists():
+        viejos = dict(_traducir(k, v) for k, v in _leer_pares(CONFIG_VIEJA).items())
+        idioma = "en" if viejos.get("language", "es")[:2].lower() == "en" else "es"
+        escribir_config(viejos, idioma)
+        CONFIG_VIEJA.replace(AQUI / "configuracion.txt.bak")
+        hecho.append("configuracion.txt -> config.txt")
+    for obsoleto in ("cdlc_bajo.py", "configuracion.en.txt", "procesar.bat.nuevo", "instalar.bat.nuevo"):
+        try:
+            (AQUI / obsoleto).unlink()
+        except OSError:
+            pass
+    if hecho:
+        log(T("Instalación adaptada a los nombres nuevos (en inglés): ",
+              "Install updated to the new (English) names: ") + ", ".join(hecho)
+            + T(". Tu configuración anterior queda en configuracion.txt.bak.",
+                ". Your previous configuration is kept in configuracion.txt.bak.")
+            * ("configuracion.txt -> config.txt" in hecho))
+    if not CONFIG.exists() and not CONFIG_VIEJA.exists() and plantilla_config(IDIOMA).exists():
+        escribir_config({"language": IDIOMA} if IDIOMA == "en" else {}, IDIOMA)
+
+
 def ruta_cdlc_pack():
     if os.environ.get("CDLC_PACK"):
         return Path(os.environ["CDLC_PACK"])
-    return AQUI / "herramientas" / "cdlc-pack" / ("cdlc-pack.exe" if os.name == "nt" else "cdlc-pack")
+    return AQUI / "tools" / "cdlc-pack" / ("cdlc-pack.exe" if os.name == "nt" else "cdlc-pack")
 
 
 WWISE_SUBRUTA = Path("Authoring") / "x64" / "Release" / "bin" / "WwiseConsole.exe"
 
 
 def buscar_wwise(configurado=None):
-    """Ruta a WwiseConsole.exe. Acepta en configuración el .exe o la carpeta de Wwise; si no hay,
-    prueba WWISEROOT (en cualquier unidad y aunque la carpeta no lleve el año, que cdlc-pack
-    exige) y las carpetas habituales de Program Files. None si no se encuentra."""
+    """Path to WwiseConsole.exe. The configuration may give the .exe or the Wwise folder; otherwise it
+    tries WWISEROOT (on any drive, even if the folder name has no year, which cdlc-pack requires) and
+    the usual Program Files folders. None if not found."""
     candidatas = []
     for base in (configurado, os.environ.get("WWISEROOT")):
         if base:
@@ -2353,7 +2528,7 @@ def buscar_wwise(configurado=None):
 
 
 def compilar_psarc(proyecto, carpeta, wwise=None):
-    """Convierte el audio con Wwise, genera la DD y empaqueta. Devuelve (rutas_psarc, error)."""
+    """Converts the audio with Wwise, generates the DD and packs the song. Returns (psarc_paths, error)."""
     exe = ruta_cdlc_pack()
     if not exe.exists():
         return [], T(f"no encuentro {exe}", f"{exe} not found")
@@ -2369,7 +2544,7 @@ def compilar_psarc(proyecto, carpeta, wwise=None):
                      "salida": r.stdout.strip().splitlines()[-15:], "errores": r.stderr.strip().splitlines()[-15:],
                      "tamaño_kb": [round(Path(x).stat().st_size / 1024) for x in rutas if Path(x).exists()]}
     verif = [l[6:].strip() for l in r.stdout.splitlines() if l.startswith("VERIF ")]
-    if verif:  # lo que de verdad hay dentro del psarc (niveles DD, frases, notas al máximo nivel)
+    if verif:  # what is really inside the psarc (DD levels, phrases, notes at the top level)
         DIAG["psarc"]["verificacion"] = verif
         for l in verif:
             if "notas_max=" in l and "niveles=" in l:
@@ -2390,14 +2565,14 @@ def compilar_psarc(proyecto, carpeta, wwise=None):
 
 
 class Registro:
-    """Registro general de una tanda: resumen por canción + informes completos + errores detallados.
-    Se reescribe tras cada canción, así que vale aunque el proceso se corte a medias."""
+    """Batch log (output/log_*.txt): one line per song + full reports + detailed errors.
+    Rewritten after every song, so it's useful even if the process is cut short."""
     def __init__(self, ruta, total, forzar):
         import platform
         self.ruta, self.total, self.inicio = Path(ruta), total, time.time()
         self.cabecera = (f"{T('REGISTRO', 'LOG')} auto-cdlc {VERSION} | {time.strftime('%Y-%m-%d %H:%M')} | {T('idioma', 'language')} {IDIOMA}\n"
                          f"{T('Sistema', 'System')}: {platform.platform()} | Python {platform.python_version()}\n"
-                         f"{T('Canciones en la tanda', 'Songs in the batch')}: {total}" + (" | --forzar" if forzar else "") + "\n")
+                         f"{T('Canciones en la tanda', 'Songs in the batch')}: {total}" + (" | --force" if forzar else "") + "\n")
         self.lineas, self.informes, self.errores, self.final = [], [], [], T("(tanda en curso)\n", "(batch in progress)\n")
         self.diagnosticos = []
         try:
@@ -2448,9 +2623,9 @@ class Registro:
         self.ruta.write_text(texto, encoding="utf-8")
 
 
-# ---------------- preparación de la tanda: pendientes, discos y preguntas ----------------
+# ---------------- batch preparation: pending songs, albums and questions ----------------
 def leer_con_espera(segundos):
-    """Lee una línea del teclado; None si nadie escribe nada en 'segundos' (o no hay teclado)."""
+    """Reads a line from the keyboard; None if nothing is typed within 'segundos' (or there's no keyboard)."""
     import sys
     if not sys.stdin or not sys.stdin.isatty():
         return None
@@ -2465,10 +2640,10 @@ def leer_con_espera(segundos):
                 if ch == "\b":
                     texto = texto[:-1]; print(" \b", end="", flush=True)
                 elif ch in ("\x00", "\xe0"):
-                    msvcrt.getwch()             # tecla especial (flechas...): se ignora
+                    msvcrt.getwch()             # special key (arrows...): ignored
                 else:
                     texto += ch
-                fin = time.time() + segundos     # mientras escribes no corre el reloj
+                fin = time.time() + segundos     # the clock stops while typing
             elif time.time() > fin:
                 return texto if texto else None
             else:
@@ -2479,8 +2654,8 @@ def leer_con_espera(segundos):
 
 
 class Preguntas:
-    """Preguntas antes de la tanda. Intro = el valor por defecto. Si nadie contesta en 'espera' segundos
-    (lanzada por la noche y te has ido), se usan los valores por defecto en esta y en todas las demás."""
+    """Questions before the batch. Enter = the default. If nobody answers within 'espera' seconds (launched
+    at night and you've gone), the defaults are used for this one and all the following ones."""
     def __init__(self, espera=60, activas=True):
         import sys
         self.espera, self.desatendido = espera, not activas
@@ -2513,8 +2688,8 @@ def _num_pista(t):
 
 
 def disco_de(ruta):
-    """(artista del disco, disco, de dónde sale) para agrupar. Etiquetas si las hay; si no, se pregunta a
-    iTunes/Deezer por la canción; si tampoco, '(sin disco)'."""
+    """(album artist, album, source) used for grouping. Tags if present; otherwise iTunes/Deezer are asked
+    about the song; failing that, '(sin disco)'."""
     et = leer_etiquetas(ruta)
     artista, titulo, _, _ = metadatos(ruta)
     art = et.get("albumartist") if _etiqueta_valida(et.get("albumartist", "")) else artista
@@ -2536,9 +2711,10 @@ def disco_de(ruta):
 
 
 def historial(salida):
-    """De los registros anteriores: segundos medios por canción y archivos que dieron error."""
+    """From earlier batch logs: average seconds per song, files that failed and files with no bass."""
     tiempos, fallidas, sin_bajo = [], set(), set()
-    for reg in sorted(Path(salida).glob("registro_*.txt")):
+    for reg in sorted(list(Path(salida).glob("registro_*.txt")) + list(Path(salida).glob("log_*.txt")),
+                      key=lambda x: x.stat().st_mtime):
         try:
             for l in reg.read_text(encoding="utf-8", errors="replace").splitlines():
                 m = re.match(r"\[\d+/\d+\] (.+?) \| (OK|ERROR|SIN BAJO|NO BASS) \| (\d+) s(.*)", l)
@@ -2557,7 +2733,7 @@ def historial(salida):
 
 
 def alias_tono(v):
-    """Nombres en inglés de los tonos de referencia."""
+    """English names of the reference tones."""
     return TONO_ALIAS.get(v.strip().lower(), v.strip())
 
 
@@ -2571,7 +2747,7 @@ def tono_valido(v):
 
 
 def duracion_txt(seg):
-    """Duración legible: '1 h 5 min', '20 min 48 s', '45 s' (con horas no se muestran segundos)."""
+    """Readable duration: '1 h 5 min', '20 min 48 s', '45 s' (no seconds once there are hours)."""
     seg = max(0, int(round(seg)))
     h, resto = divmod(seg, 3600)
     m, s = divmod(resto, 60)
@@ -2583,8 +2759,8 @@ def duracion_txt(seg):
 
 
 def planificar(archivos, salida, forzar, preguntar):
-    """Pendientes agrupados por artista > disco, preguntas de la tanda y de cada disco, y resumen.
-    Devuelve la lista [(archivo, ajustes del disco)] en orden, o None si se cancela."""
+    """Pending songs grouped by artist > album, batch and album questions, and summary.
+    Returns [(file, album settings)] in order, or None if cancelled."""
     import json
     global DD_INICIAL, ARREGLO_SIMPLE
     pendientes, hechas = [], 0
@@ -2600,8 +2776,8 @@ def planificar(archivos, salida, forzar, preguntar):
     log(T(f"\nEn la entrada hay {len(archivos)} canciones: {hechas} ya procesadas, {len(pendientes)} pendientes.",
           f"\nThe input has {len(archivos)} songs: {hechas} already processed, {len(pendientes)} pending."))
     if sin:
-        log(T(f"Se saltan {len(sin)} que no tenían bajo en tandas anteriores (usa --forzar para repetirlas).",
-              f"Skipping {len(sin)} that had no bass in earlier batches (use --forzar to redo them)."))
+        log(T(f"Se saltan {len(sin)} que no tenían bajo en tandas anteriores (usa --force para repetirlas).",
+              f"Skipping {len(sin)} that had no bass in earlier batches (use --force to redo them)."))
     if not pendientes:
         return []
     log(T("Agrupando por disco...", "Grouping by album..."))
@@ -2633,7 +2809,7 @@ def planificar(archivos, salida, forzar, preguntar):
         reintentar = si_no(preguntar(T("¿Reintentarlas? (s/n)", "Retry them? (y/n)"), "n", lambda x: x.lower()[:1] in "syn"))
 
     if not reintentar:
-        # lo que no se va a procesar no entra en las preguntas ni en el resumen
+        # songs that won't be processed stay out of the questions and the summary
         for d in discos.values():
             d["canciones"] = [c for c in d["canciones"] if c[2].name not in fallidas]
         orden = [k for k in orden if discos[k]["canciones"]]
@@ -2641,9 +2817,9 @@ def planificar(archivos, salida, forzar, preguntar):
             log(T("No queda nada que procesar.", "Nothing left to process."))
             return []
 
-    # ---- preguntas de la tanda ----
-    log(T("\nPulsa Intro para dejar lo que hay entre corchetes (lo de configuracion.txt).",
-          "\nPress Enter to keep the value in brackets (the one in configuracion.txt)."))
+    # ---- batch questions ----
+    log(T("\nPulsa Intro para dejar lo que hay entre corchetes (lo de config.txt).",
+          "\nPress Enter to keep the value in brackets (the one in config.txt)."))
     v = preguntar(T("Dificultad inicial para toda la tanda (% de notas con que empieza cada frase, 0-95)",
                     "Starting difficulty for the whole batch (% of notes each phrase starts with, 0-95)"),
                   f"{DD_INICIAL:.0f}", lambda x: x.replace("%", "").strip().replace(",", ".").replace(".", "", 1).isdigit()
@@ -2666,13 +2842,13 @@ def planificar(archivos, salida, forzar, preguntar):
               "(diagnóstico, informe y tablatura de cada canción), nunca el audio ni la letra, y sin rutas personales.",
               "\nYou can send this batch's results to help improve auto-cdlc. Only data is sent (diagnostics,\n"
               "report and tab of each song), never the audio or the lyrics, and without personal paths."))
-        # Intro = sí; pero si nadie contesta (tanda desatendida) no se envía nada sin permiso
+        # Enter = yes; but if nobody answers (unattended batch) nothing is sent without permission
         ENVIAR = si_no(preguntar(T("¿Enviar los resultados? (s/n)", "Send the results? (y/n)"), T("s", "y"),
                                  lambda x: x.lower()[:1] in "syn")) and not preguntar.desatendido
     else:
         ENVIAR = bool(ENVIOS_URL) and not SIN_INTERNET and modo_envio == "si"
-    # ---- preguntas de cada disco ----
-    ruta_aj = Path(salida) / "ajustes_discos.json"
+    # ---- album questions ----
+    ruta_aj = Path(salida) / "album_settings.json"
     try:
         guardados = json.loads(ruta_aj.read_text(encoding="utf-8"))
     except Exception:
@@ -2699,7 +2875,7 @@ def planificar(archivos, salida, forzar, preguntar):
     except Exception:
         pass
 
-    # ---- cola y resumen ----
+    # ---- queue and summary ----
     cola = [(r, k, ajustes[k]) for k in orden for _, _, r in discos[k]["canciones"]]
     saltadas = [] if reintentar else fallaron
     estimado = seg_cancion is None
@@ -2732,9 +2908,9 @@ def planificar(archivos, salida, forzar, preguntar):
     return cola
 
 
-# ---------------- envío voluntario de resultados ----------------
+# ---------------- voluntary results upload ----------------
 def _anonimizar(texto):
-    """Quita rutas personales (la carpeta del usuario y la del programa)."""
+    """Removes personal paths (the user's folder and the program's)."""
     for ruta, sustituto in ((str(AQUI), "<auto-cdlc>"), (str(Path.home()), "<usuario>")):
         for variante in {ruta, ruta.replace("\\", "\\\\"), ruta.replace("\\", "/")}:
             texto = texto.replace(variante, sustituto)
@@ -2742,7 +2918,7 @@ def _anonimizar(texto):
 
 
 def id_instalacion():
-    """Identificador anónimo de esta instalación (para agrupar envíos; no identifica a la persona)."""
+    """Anonymous id of this install (to group uploads; it doesn't identify the person)."""
     import uuid
     ruta = AQUI / ".instalacion"
     try:
@@ -2758,7 +2934,7 @@ def id_instalacion():
 _ENVIO_FALLIDO = [False]
 
 
-PENDIENTES = AQUI / "envios_pendientes"
+PENDIENTES = AQUI / "pending_uploads"
 
 
 def _post_envio(cuerpo, timeout=20):
@@ -2770,8 +2946,8 @@ def _post_envio(cuerpo, timeout=20):
 
 
 def _guardar_pendiente(cuerpo):
-    """Si el servidor no responde (p. ej. los bloqueos de IPs de Cloudflare en España en días de fútbol),
-    el envío se guarda y se manda en la siguiente tanda. Como mucho 500."""
+    """If the server can't be reached (e.g. Cloudflare IPs blocked in Spain on football match days), the
+    upload is saved and sent in the next batch. At most 500."""
     try:
         PENDIENTES.mkdir(exist_ok=True)
         if len(list(PENDIENTES.glob("*.json.gz"))) < 500:
@@ -2784,7 +2960,7 @@ def _guardar_pendiente(cuerpo):
 
 
 def reenviar_pendientes():
-    """Manda los envíos que quedaron guardados en tandas anteriores; para al primer fallo."""
+    """Sends the uploads saved in earlier batches; stops at the first failure."""
     if not (ENVIAR and ENVIOS_URL) or not PENDIENTES.is_dir():
         return
     archivos = sorted(PENDIENTES.glob("*.json.gz"))
@@ -2801,8 +2977,8 @@ def reenviar_pendientes():
 
 
 def enviar_cancion(ruta, estado, resumen, carpeta, traza=None):
-    """Sube los resultados de una canción (nunca el audio ni la letra) al servidor de envíos. Si no se
-    puede, los guarda para la siguiente tanda."""
+    """Uploads a song's results (never the audio or the lyrics) to the results server. If that fails,
+    they are saved for the next batch."""
     if not (ENVIAR and ENVIOS_URL):
         return
     import json, gzip, platform, urllib.request
@@ -2819,7 +2995,7 @@ def enviar_cancion(ruta, estado, resumen, carpeta, traza=None):
                 if (c / archivo).exists():
                     datos["cancion"][clave] = (c / archivo).read_text(encoding="utf-8")
             datos["cancion"]["xml"] = {x.name: x.read_text(encoding="utf-8")
-                                       for x in sorted(c.glob("*_bass*_RS2.xml"))}   # sin la letra
+                                       for x in sorted(c.glob("*_bass*_RS2.xml"))}   # not the lyrics
         cuerpo = gzip.compress(_anonimizar(json.dumps(datos, ensure_ascii=False, default=str)).encode("utf-8"))
     except Exception:
         return
@@ -2836,13 +3012,13 @@ def enviar_cancion(ruta, estado, resumen, carpeta, traza=None):
     _guardar_pendiente(cuerpo)
 
 
-# ---------------- actualizaciones ----------------
+# ---------------- updates ----------------
 def _num_version(v):
     return tuple(int(x) for x in re.findall(r"\d+", str(v))[:4])
 
 
 def _bajar(url, destino, intentos=3):
-    """Descarga con reintentos (un fallo de DNS o de red suelto no debe tirar la actualización)."""
+    """Download with retries (a one-off DNS or network failure shouldn't break the update)."""
     import urllib.request
     for k in range(intentos):
         try:
@@ -2857,9 +3033,9 @@ def _bajar(url, destino, intentos=3):
 
 
 def _bajar_codigo(rel, destino):
-    """El código de la release: primero el zip del código (codeload.github.com); si ese servidor no
-    responde o no se resuelve, el paquete para Windows adjunto a la release (otro servidor) y, por
-    último, el archivo de la etiqueta."""
+    """The release's code: first the source zip (codeload.github.com); if that server doesn't answer or
+    can't be resolved, the Windows package attached to the release (another server) and, last, the
+    tag's archive."""
     tag = rel.get("tag_name", "")
     urls = [rel.get("zipball_url")]
     urls += [a["browser_download_url"] for a in rel.get("assets", [])
@@ -2876,10 +3052,10 @@ def _bajar_codigo(rel, destino):
 
 
 def fusionar_configuracion(actual, plantilla):
-    """Añade al configuracion.txt del usuario las claves nuevas de la plantilla (con sus comentarios),
-    sin tocar las que ya tiene. Devuelve las claves añadidas."""
+    """Appends to the user's config.txt the keys of the template that it doesn't have yet (with their
+    comments), leaving existing keys alone. Returns the keys added."""
     texto = actual.read_text(encoding="utf-8-sig")
-    tiene = {l.split("=", 1)[0].strip().lower() for l in texto.splitlines()
+    tiene = {_traducir(l.split("=", 1)[0].strip().lower(), "")[0] for l in texto.splitlines()
              if "=" in l and not l.lstrip().startswith("#")}
     bloques, comentarios = [], []
     for l in plantilla.read_text(encoding="utf-8-sig").splitlines():
@@ -2889,16 +3065,23 @@ def fusionar_configuracion(actual, plantilla):
             bloques.append((l.split("=", 1)[0].strip().lower(), comentarios + [l])); comentarios = []
         else:
             comentarios = []
-    nuevas = [(k, b) for k, b in bloques if k not in tiene and k != "idioma"]
+    nuevas = [(k, b) for k, b in bloques if k not in tiene and k != "language"]
     if nuevas:
         extra = "\r\n\r\n" + "\r\n\r\n".join("\r\n".join(b) for _, b in nuevas) + "\r\n"
         actual.write_text(texto.rstrip("\r\n") + extra, encoding="utf-8")
     return [k for k, _ in nuevas]
 
 
+# Folders and files of a user's install that an update must never overwrite (old names included, in case
+# an install that hasn't been migrated yet is updated).
+CONSERVAR = {"config.txt", "input", "output", "models", "psarc", "pending_uploads", ".venv", ".git",
+             "configuracion.txt", "entrada", "salida", "modelos", "envios_pendientes"}
+BATS_EN_MARCHA = {"process.bat", "procesar.bat"}    # may be running: replaced by process.bat after exiting
+
+
 def comprobar_actualizacion(preguntar):
-    """Mira si hay una versión nueva publicada y, si quieres, la instala sin tocar tu configuración, tus
-    canciones ni los modelos. Devuelve True si se ha actualizado (hay que volver a lanzar)."""
+    """Checks whether a new version has been published and, if the user agrees, installs it without
+    touching the configuration, the songs or the models. Returns True if it updated (relaunch needed)."""
     import json, urllib.request, zipfile, tempfile
     try:
         req = urllib.request.Request(f"https://api.github.com/repos/{REPO.split('github.com/')[1]}/releases/latest",
@@ -2906,19 +3089,19 @@ def comprobar_actualizacion(preguntar):
         with urllib.request.urlopen(req, timeout=8) as r:
             rel = json.load(r)
     except Exception:
-        return False                      # sin conexión o GitHub caído: se sigue sin más
+        return False                      # offline or GitHub down: carry on
     nueva = str(rel.get("tag_name", "")).lstrip("v")
     if not nueva or _num_version(nueva) <= _num_version(VERSION):
         return False
     log("\n" + "=" * 70)
     log(T(f"Hay una versión nueva de auto-cdlc: {nueva} (tienes la {VERSION})",
           f"A new version of auto-cdlc is available: {nueva} (you have {VERSION})"))
+    # release notes: English first, then "### Español"; show the part in the user's language
     cuerpo = str(rel.get("body") or "")
-    partes = re.split(r"(?m)^## Español\s*$", cuerpo)
+    partes = re.split(r"(?m)^#{2,3} Español\s*$", cuerpo)
     cuerpo = (partes[1] if len(partes) > 1 else partes[0]) if IDIOMA == "es" else partes[0]
-    novedades = re.split(r"(?m)^### (?:What's in|Novedades)[^\n]*$", cuerpo)
-    texto = novedades[1] if len(novedades) > 1 else cuerpo
-    notas = [l for l in texto.splitlines() if l.strip().startswith(("-", "*", "1", "2", "3")) and "**English**" not in l]
+    cuerpo = re.split(r"(?m)^#{2,3} (?:Install|Instalar)", cuerpo)[0]
+    notas = [l for l in cuerpo.splitlines() if l.strip().startswith(("-", "*")) and "**English**" not in l]
     for l in notas[:12]:
         log("  " + l.strip()[:110])
     log(f"  {rel.get('html_url', REPO + '/releases')}")
@@ -2940,36 +3123,33 @@ def comprobar_actualizacion(preguntar):
         with zipfile.ZipFile(tmp / "codigo.zip") as z:
             z.extractall(tmp / "codigo")
         raiz = next((tmp / "codigo").iterdir())
-        conservar = {"configuracion.txt", "entrada", "salida", "modelos", "psarc", ".venv", ".git",
-                     "envios_pendientes"}
         for org in raiz.rglob("*"):
             rel_path = org.relative_to(raiz)
-            if not org.is_file() or rel_path.parts[0] in conservar or rel_path.parts[0].startswith(".git"):
+            if not org.is_file() or rel_path.parts[0] in CONSERVAR or rel_path.parts[0].startswith(".git"):
                 continue
-            if rel_path.parts[:2] == ("herramientas", "cdlc-pack") and rel_path.parts[2:3] != ("codigo",):
+            # the compiled cdlc-pack comes from its own release asset (below), only its source is copied here
+            if rel_path.parts[:2] == ("tools", "cdlc-pack") and rel_path.parts[2:3] != ("codigo",):
                 continue
             dst = AQUI / rel_path
-            if rel_path.as_posix() == "procesar.bat":
-                dst = AQUI / "procesar.bat.nuevo"   # el .bat está en marcha: lo cambia él mismo al acabar
+            if rel_path.as_posix() in BATS_EN_MARCHA:
+                dst = AQUI / (rel_path.name + ".nuevo")   # process.bat swaps it in once this program exits
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(org, dst)
-        plantilla = AQUI / ("configuracion.en.txt" if IDIOMA == "en" else "configuracion.txt")
-        if IDIOMA != "en":
-            plantilla = raiz / "configuracion.txt"
-        if (AQUI / "configuracion.txt").exists() and plantilla.exists():
-            nuevas = fusionar_configuracion(AQUI / "configuracion.txt", plantilla)
+        plantilla = raiz / "templates" / f"config.{'en' if IDIOMA == 'en' else 'es'}.txt"
+        if CONFIG.exists() and plantilla.exists():
+            nuevas = fusionar_configuracion(CONFIG, plantilla)
             if nuevas:
-                log(T("Opciones nuevas añadidas a configuracion.txt: ", "New options added to configuracion.txt: ")
+                log(T("Opciones nuevas añadidas a config.txt: ", "New options added to config.txt: ")
                     + ", ".join(nuevas))
-        # el compilador solo se baja si la release trae uno distinto del que tienes
+        # the compiler is only downloaded when the release has a different one from yours
         if os.name == "nt":
             asset = next((a for a in rel.get("assets", []) if a.get("name") == "cdlc-pack-win-x64.zip"), None)
-            marca = AQUI / "herramientas" / "cdlc-pack" / ".release"
+            marca = AQUI / "tools" / "cdlc-pack" / ".release"
             if asset and (not marca.exists() or marca.read_text().strip() != str(asset.get("updated_at"))):
                 log(T("Actualizando cdlc-pack...", "Updating cdlc-pack..."))
                 _bajar(asset["browser_download_url"], tmp / "pack.zip")
                 with zipfile.ZipFile(tmp / "pack.zip") as z:
-                    z.extractall(AQUI / "herramientas" / "cdlc-pack")
+                    z.extractall(AQUI / "tools" / "cdlc-pack")
                 marca.write_text(str(asset.get("updated_at")))
     except Exception as ex:
         log(T(f"No se ha podido actualizar ({ex}). Sigue la versión {VERSION}; puedes bajar la nueva de {REPO}/releases",
@@ -2982,41 +3162,53 @@ def comprobar_actualizacion(preguntar):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="mp3 -> tablatura de bajo + mapa de beats para EOF")
-    ap.add_argument("entradas", nargs="*", help="archivos o carpetas (por defecto: carpeta 'entrada')")
-    ap.add_argument("--salida", default=str(AQUI / "salida"))
-    ap.add_argument("--forzar", action="store_true")
-    ap.add_argument("--psarc", help="carpeta de destino de los .psarc (por defecto: carpeta 'psarc')")
-    ap.add_argument("--wwise", help="ruta a WwiseConsole.exe (normalmente se encuentra sola)")
-    ap.add_argument("--sin-psarc", action="store_true", help="no compilar: deja sólo el proyecto .rs2dlc")
-    ap.add_argument("--sin-internet", action="store_true", help="no buscar carátulas en internet")
-    ap.add_argument("--sin-actualizar", action="store_true", help="no buscar versiones nuevas")
-    ap.add_argument("--reempaquetar", "--rebuild", action="store_true",
-                    help="volver a crear el .psarc de canciones ya procesadas (p. ej. tras retocar a mano sus XML "
-                         "o su proyecto .rs2dlc): pasa sus carpetas de 'salida' o sus .rs2dlc / rebuild the .psarc "
-                         "of already processed songs after hand-editing: pass their 'salida' folders or .rs2dlc files")
-    ap.add_argument("--sin-preguntas", action="store_true",
-                    help="no preguntar nada: usar lo de configuracion.txt (y lo recordado de cada disco)")
+    ap = argparse.ArgumentParser(description="auto-cdlc: audio files -> bass CDLC for Rocksmith 2014. "
+                                             "Old Spanish option names (--forzar, --salida...) still work.")
+    ap.add_argument("entradas", nargs="*", metavar="FILES",
+                    help="audio files or folders (default: the 'input' folder)")
+    ap.add_argument("--output", "--salida", dest="salida", metavar="FOLDER", default=str(AQUI / "output"),
+                    help="results folder (default: 'output')")
+    ap.add_argument("--force", "--forzar", dest="forzar", action="store_true",
+                    help="process again songs that already have results")
+    ap.add_argument("--psarc", metavar="FOLDER", help="folder for the .psarc files (default: psarc_folder in config.txt, or 'psarc')")
+    ap.add_argument("--wwise", metavar="PATH", help="Wwise folder or path to WwiseConsole.exe (usually found automatically)")
+    ap.add_argument("--no-psarc", "--sin-psarc", dest="sin_psarc", action="store_true",
+                    help="don't build the .psarc: leave only the .rs2dlc project")
+    ap.add_argument("--offline", "--sin-internet", dest="sin_internet", action="store_true",
+                    help="don't go online (no album art, official tones, lyrics or updates)")
+    ap.add_argument("--no-update", "--sin-actualizar", dest="sin_actualizar", action="store_true",
+                    help="don't check for new versions")
+    ap.add_argument("--rebuild", "--reempaquetar", dest="reempaquetar", action="store_true",
+                    help="rebuild the .psarc of already processed songs after hand-editing their XMLs or "
+                         ".rs2dlc project: pass their folders in 'output' or their .rs2dlc files")
+    ap.add_argument("--no-questions", "--sin-preguntas", dest="sin_preguntas", action="store_true",
+                    help="ask nothing: use config.txt (and what was remembered for each album)")
+    ap.add_argument("--setup", metavar="LANG", help=argparse.SUPPRESS)   # used by install.bat
     a = ap.parse_args()
+    if a.setup is not None:
+        sys.exit(preparar_instalacion(a.setup))
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
     global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO, VELOCIDAD_SCROLL, LETRA, ARREGLO_SIMPLE
     global VELOCIDAD_AUTO, IDIOMA
+    # the language is read first so that the migration messages come out in the right one
+    IDIOMA = "en" if leer_configuracion().get("language", "es").strip().lower()[:2] == "en" else "es"
+    migrar_instalacion()
     conf = leer_configuracion()
-    IDIOMA = "en" if conf.get("idioma", "es").strip().lower()[:2] == "en" else "es"
+    IDIOMA = "en" if conf.get("language", "es").strip().lower()[:2] == "en" else "es"
     global ENVIOS_URL, CONF_ENVIO
-    ENVIOS_URL = conf.get("servidor_envios", ENVIOS_URL).strip()
-    CONF_ENVIO = {"si": "si", "yes": "si", "no": "no"}.get(conf.get("enviar_resultados", "preguntar").strip().lower(),
-                                                          "preguntar")
-    no = ("no", "false", "0")
-    PARTIR_REPETIDAS = conf.get("partir_repetidas", "si").lower() not in no
-    TONO_CREPE = conf.get("tono_crepe", "si").lower() not in no
-    TONO_MODO = alias_tono(conf.get("tono_bajo", "auto").strip() or "auto")
-    LETRA = conf.get("letra", "si").lower() not in no
-    ARREGLO_SIMPLE = {"no": None, "ninguno": None, "compas": 0, "compás": 0, "medio": 1, "medio compas": 1,
-                      "medio compás": 1, "tiempo": 2, "corchea": 3, "none": None, "bar": 0, "half": 1,
-                      "beat": 2, "eighth": 3}.get(
-        conf.get("arreglo_simple", "tiempo").strip().lower(), 2)
-    v = conf.get("velocidad_scroll", "1.3").strip().lower()
+    ENVIOS_URL = conf.get("upload_server", ENVIOS_URL).strip()
+    CONF_ENVIO = {"yes": "si", "no": "no"}.get(conf.get("send_results", "ask").strip().lower(), "preguntar")
+    no = ("no", "false", "0", "off")
+
+    def si(clave):                                   # yes/no keys, yes by default
+        return conf.get(clave, "yes").strip().lower() not in no
+    PARTIR_REPETIDAS = si("split_repeated")
+    TONO_CREPE = si("crepe_pitch")
+    TONO_MODO = alias_tono(conf.get("bass_tone", "auto").strip() or "auto")
+    LETRA = si("lyrics")
+    ARREGLO_SIMPLE = {"no": None, "none": None, "bar": 0, "half": 1, "beat": 2, "eighth": 3}.get(
+        conf.get("simple_arrangement", "beat").strip().lower(), 2)
+    v = conf.get("scroll_speed", "1.3").strip().lower()
     VELOCIDAD_AUTO = v.startswith("auto")
     try:
         v = v[4:].strip() if VELOCIDAD_AUTO else v
@@ -3024,27 +3216,27 @@ def main():
     except ValueError:
         pass
     try:
-        UMBRAL_REATAQUE_DB = float(conf.get("umbral_reataque_db", UMBRAL_REATAQUE_DB))
+        UMBRAL_REATAQUE_DB = float(conf.get("reattack_threshold_db", UMBRAL_REATAQUE_DB))
     except ValueError:
-        log(T("Aviso: umbral_reataque_db no es un número en configuracion.txt; uso 3",
-              "Warning: umbral_reataque_db is not a number in configuracion.txt; using 3"))
+        log(T("Aviso: reattack_threshold_db no es un número en config.txt; uso 3",
+              "Warning: reattack_threshold_db is not a number in config.txt; using 3"))
     try:
-        UMBRAL_CENTS = float(conf.get("umbral_cents", UMBRAL_CENTS))
-        dd = conf.get("dificultad", DD_MODO).strip().lower()
-        DD_MODO = {"propia": "propia", "dlcbuilder": "dlcbuilder", "dlc builder": "dlcbuilder",
-                   "ninguna": "ninguna", "no": "ninguna"}.get(dd, "propia")
-        DD_INICIAL = min(95.0, max(0.0, float(str(conf.get("dificultad_inicial", DD_INICIAL)).replace("%", "").strip())))
+        UMBRAL_CENTS = float(conf.get("cents_threshold", UMBRAL_CENTS))
+        dd = conf.get("difficulty", "own").strip().lower()
+        DD_MODO = {"own": "propia", "dlcbuilder": "dlcbuilder", "dlc builder": "dlcbuilder",
+                   "none": "ninguna", "no": "ninguna"}.get(dd, "propia")
+        DD_INICIAL = min(95.0, max(0.0, float(str(conf.get("start_difficulty", DD_INICIAL)).replace("%", "").strip())))
     except ValueError:
-        log(T("Aviso: umbral_cents o dificultad_inicial no es un número en configuracion.txt; reviso los valores por defecto",
-              "Warning: umbral_cents or dificultad_inicial is not a number in configuracion.txt; using the defaults"))
-    CARPETA_PSARC = Path(a.psarc or conf.get("carpeta_psarc") or (AQUI / "psarc"))
+        log(T("Aviso: cents_threshold o start_difficulty no es un número en config.txt; uso los valores por defecto",
+              "Warning: cents_threshold or start_difficulty is not a number in config.txt; using the defaults"))
+    CARPETA_PSARC = Path(a.psarc or conf.get("psarc_folder") or (AQUI / "psarc"))
     configurado = a.wwise or conf.get("wwise") or None
     WWISE = buscar_wwise(configurado)
     if configurado and not WWISE:
         log(T(f"Aviso: la ruta de Wwise de la configuración no existe o no contiene WwiseConsole.exe: {configurado}",
               f"Warning: the Wwise path in the configuration doesn't exist or has no WwiseConsole.exe: {configurado}"))
-    COMPILAR = not (a.sin_psarc or conf.get("compilar_psarc", "si").lower() in ("no", "false", "0"))
-    SIN_INTERNET = a.sin_internet or conf.get("buscar_caratulas", "si").lower() in ("no", "false", "0")
+    COMPILAR = not (a.sin_psarc or not si("build_psarc"))
+    SIN_INTERNET = a.sin_internet or not si("online")
     if COMPILAR and not ruta_cdlc_pack().exists():
         log(T(f"Aviso: no encuentro {ruta_cdlc_pack()}; sólo se generarán los proyectos .rs2dlc",
               f"Warning: {ruta_cdlc_pack()} not found; only the .rs2dlc projects will be created"))
@@ -3053,25 +3245,25 @@ def main():
         CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
         if os.name == "nt" and not WWISE:
             log(T("AVISO: no encuentro Wwise (WwiseConsole.exe), así que no se podrán crear los .psarc.\n"
-                  "  Pon en configuracion.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
+                  "  Pon en config.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
                   "WARNING: Wwise (WwiseConsole.exe) not found, so the .psarc files can't be built.\n"
-                  "  Set the wwise key in configuracion.txt to the Wwise folder or to WwiseConsole.exe."))
+                  "  Set the wwise key in config.txt to the Wwise folder or to WwiseConsole.exe."))
     if a.reempaquetar:
         sys.exit(reempaquetar(a.entradas))
     espera = 60
     try:
-        espera = int(conf.get("espera_preguntas", 60))
+        espera = int(conf.get("question_timeout", 60))
     except ValueError:
         pass
     preguntas = Preguntas(espera, activas=not a.sin_preguntas)
-    if not (a.sin_actualizar or SIN_INTERNET or conf.get("buscar_actualizaciones", "si").lower() in no):
+    if not (a.sin_actualizar or SIN_INTERNET or not si("check_updates")):
         if comprobar_actualizacion(preguntas):
             if os.environ.get("AUTO_CDLC_BAT"):
-                raise SystemExit(10)        # procesar.bat prepara las librerías nuevas y vuelve a lanzar
+                raise SystemExit(10)        # process.bat installs the new libraries and relaunches
             log(T("Vuelve a lanzar el programa para usar la versión nueva (antes: uv sync --frozen).",
                   "Launch the program again to use the new version (first: uv sync --frozen)."))
             return
-    entradas = [Path(e) for e in a.entradas] or [AQUI / "entrada"]
+    entradas = [Path(e) for e in a.entradas] or [AQUI / "input"]
     archivos = []
     for e in entradas:
         if e.is_dir():
@@ -3081,8 +3273,8 @@ def main():
         else:
             log(T(f"Ignoro {e} (no existe o no es audio)", f"Ignoring {e} (doesn't exist or isn't audio)"))
     if not archivos:
-        log(T("No hay canciones que procesar. Mete los mp3 en la carpeta 'entrada'.",
-              "No songs to process. Put your mp3s in the 'entrada' folder."))
+        log(T("No hay canciones que procesar. Mete los mp3 en la carpeta 'input'.",
+              "No songs to process. Put your mp3s in the 'input' folder."))
         return
     salida = Path(a.salida); salida.mkdir(parents=True, exist_ok=True)
     ffmpeg_bin()
@@ -3092,11 +3284,11 @@ def main():
         log(T("Cancelado: no se procesa nada.", "Cancelled: nothing is processed."))
         return
     if not cola:
-        log(T("No hay nada pendiente. (Para repetir canciones ya hechas, usa --forzar.)",
-              "Nothing pending. (To redo songs already processed, use --forzar.)"))
+        log(T("No hay nada pendiente. (Para repetir canciones ya hechas, usa --force.)",
+              "Nothing pending. (To redo songs already processed, use --force.)"))
         return
     reenviar_pendientes()
-    registro = Registro(salida / time.strftime("registro_%Y-%m-%d_%H-%M.txt"), len(cola), a.forzar)
+    registro = Registro(salida / time.strftime("log_%Y-%m-%d_%H-%M.txt"), len(cola), a.forzar)
     registro.cabecera += T("Discos: ", "Albums: ") + " || ".join(
         f"{k[0]} > {k[1]} (tono {aj['tono']}, púa {aj['pua']})"
         for k, aj in dict((k, aj) for _, k, aj in cola).items()) + "\n"
@@ -3156,10 +3348,10 @@ def main():
         for n, e in SIN_PSARC:
             log(f"  - {n}: {e}")
         if any("wwise" in (e or "").lower() for _, e in SIN_PSARC):
-            log(T("  -> Parece un problema con Wwise: pon su carpeta o la ruta de WwiseConsole.exe en configuracion.txt\n"
-                  "     (clave wwise) y repite esas canciones con --forzar.",
-                  "  -> Looks like a Wwise problem: set its folder or the path to WwiseConsole.exe in configuracion.txt\n"
-                  "     (wwise key) and redo those songs with --forzar."))
+            log(T("  -> Parece un problema con Wwise: pon su carpeta o la ruta de WwiseConsole.exe en config.txt\n"
+                  "     (clave wwise) y repite esas canciones con --force.",
+                  "  -> Looks like a Wwise problem: set its folder or the path to WwiseConsole.exe in config.txt\n"
+                  "     (wwise key) and redo those songs with --force."))
     log(T(f"Registro de esta tanda (el que me puedes pasar): {registro.ruta.name}",
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:
@@ -3170,13 +3362,13 @@ def main():
 
 
 def reempaquetar(entradas):
-    """Vuelve a crear el .psarc desde el proyecto .rs2dlc de cada canción (y los XML que este enlaza), sin
-    volver a analizar el audio: para quien retoca la tablatura a mano (EOF, editor de XML, DLC Builder)."""
+    """Rebuilds the .psarc from each song's .rs2dlc project (and the XMLs it points to) without analysing
+    the audio again: for people who edit the tab by hand (EOF, an XML editor, DLC Builder)."""
     if not entradas:
-        log(T("Indica las carpetas de las canciones (dentro de 'salida') o sus .rs2dlc. Ejemplo:\n"
-              '  procesar.bat --reempaquetar "salida\\Artista - Título"',
-              "Give the songs' folders (inside 'salida') or their .rs2dlc files. Example:\n"
-              '  procesar.bat --rebuild "salida\\Artist - Title"'))
+        log(T("Indica las carpetas de las canciones (dentro de 'output') o sus .rs2dlc. Ejemplo:\n"
+              '  process.bat --rebuild "output\\Artista - Título"',
+              "Give the songs' folders (inside 'output') or their .rs2dlc files. Example:\n"
+              '  process.bat --rebuild "output\\Artist - Title"'))
         return 2
     if not ruta_cdlc_pack().exists():
         log(T(f"No encuentro {ruta_cdlc_pack()}.", f"{ruta_cdlc_pack()} not found."))
@@ -3210,22 +3402,22 @@ def reempaquetar(entradas):
 
 
 def mover_entradas(preguntar, hechas, descartadas):
-    """Ofrece sacar de la carpeta de entrada lo ya procesado (a 'procesadas') y lo que dio error o no tenía
-    bajo (a 'descartadas'). Se mueve, no se borra: para repetir una canción con --forzar hace falta el
-    audio. Las subcarpetas no se leen al buscar pendientes. Por defecto no se mueve nada."""
+    """Offers to move the batch's files out of the input folder: processed ones to 'processed', errors and
+    songs with no bass to 'discarded'. Files are moved, never deleted (redoing a song with --force needs
+    its audio). Subfolders are not scanned when looking for pending songs. The default answer is no."""
     if not hechas and not descartadas:
         return
     try:
-        if not si_no(preguntar(T(f"\n¿Sacar de la entrada los archivos de esta tanda? {len(hechas)} a 'procesadas', "
-                                 f"{len(descartadas)} a 'descartadas' (s/n)",
-                                 f"\nMove this batch's files out of the input? {len(hechas)} to 'procesadas', "
-                                 f"{len(descartadas)} to 'descartadas' (y/n)"), "n",
+        if not si_no(preguntar(T(f"\n¿Sacar de input los archivos de esta tanda? {len(hechas)} a 'processed', "
+                                 f"{len(descartadas)} a 'discarded' (s/n)",
+                                 f"\nMove this batch's files out of input? {len(hechas)} to 'processed', "
+                                 f"{len(descartadas)} to 'discarded' (y/n)"), "n",
                                lambda x: x.lower()[:1] in "syn")) or preguntar.desatendido:
             return
     except Exception:
         return
     movidas = 0
-    for rutas, sub in ((hechas, "procesadas"), (descartadas, "descartadas")):
+    for rutas, sub in ((hechas, "processed"), (descartadas, "discarded")):
         for r in rutas:
             try:
                 dest_dir = r.parent / sub
@@ -3237,8 +3429,8 @@ def mover_entradas(preguntar, hechas, descartadas):
                 shutil.move(str(r), str(dest)); movidas += 1
             except Exception as ex:
                 log(T(f"  No se pudo mover {r.name}: {ex}", f"  Couldn't move {r.name}: {ex}"))
-    log(T(f"Movidos {movidas} archivos (subcarpetas 'procesadas' y 'descartadas' de la entrada).",
-          f"Moved {movidas} files (subfolders 'procesadas' and 'descartadas' of the input)."))
+    log(T(f"Movidos {movidas} archivos (subcarpetas 'processed' y 'discarded' de input).",
+          f"Moved {movidas} files (subfolders 'processed' and 'discarded' of input)."))
 
 
 if __name__ == "__main__":

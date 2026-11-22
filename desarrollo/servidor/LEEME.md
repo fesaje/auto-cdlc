@@ -36,8 +36,8 @@ Necesitas una cuenta de Cloudflare y [Node.js](https://nodejs.org) (versión LTS
      `https://auto-cdlc-envios.TU-SUBDOMINIO.workers.dev`.
 3. Comprueba que funciona: al abrir esa dirección en el navegador debe salir
    "auto-cdlc: servidor de envíos en marcha".
-4. Pon esa dirección en `ENVIOS_URL` dentro de `cdlc_bajo.py` (ahora: `https://auto-cdlc-envios.auto-cdlc.workers.dev`), o en `servidor_envios` de
-   `configuracion.txt` para probar. A partir de ahí, `procesar.bat` pregunta en cada tanda si enviar.
+4. Pon esa dirección en `ENVIOS_URL` dentro de `auto_cdlc.py` (ahora: `https://auto-cdlc-envios.auto-cdlc.workers.dev`), o en `upload_server` de
+   `config.txt` para probar. A partir de ahí, `process.bat` pregunta en cada tanda si enviar.
 
 Si `deploy` da error por el límite de envíos por IP (`[[ratelimits]]` en `wrangler.toml`), borra ese bloque
 y vuelve a desplegar.

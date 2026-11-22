@@ -2,16 +2,16 @@
 
 [English](../en/how-it-works.md) | **Español**
 
-Todo el proceso está en `cdlc_bajo.py`. Las cifras de este documento son las de la versión 0.3.
+Todo el proceso está en `auto_cdlc.py`. Las cifras de este documento son las de la versión 0.3.
 
 ## 1. Preparación de la tanda
 
-Se compara `entrada` con `salida`: una canción está hecha si su carpeta tiene el `.gp5`. Las pendientes
+Se compara `input` con `output`: una canción está hecha si su carpeta tiene el `.gp5`. Las pendientes
 se agrupan por artista del disco y álbum, sacados de las etiquetas, o de una búsqueda en iTunes si no hay
 álbum.
 
 Los registros anteriores dicen qué canciones fallaron y cuánto tarda de media una canción. Las respuestas
-de cada disco se guardan en `salida/ajustes_discos.json`.
+de cada disco se guardan en `output/album_settings.json`.
 
 ## 2. Separación del bajo
 
@@ -88,7 +88,7 @@ Se escribe:
 - el XML de cada arreglo en formato Rocksmith;
 - el proyecto `.rs2dlc` de DLC Builder, sobre el que se repiten las comprobaciones de DLC Builder.
 
-Lo compila **cdlc-pack** (`herramientas/cdlc-pack/codigo`), una pequeña aplicación de consola hecha con
+Lo compila **cdlc-pack** (`tools/cdlc-pack/codigo`), una pequeña aplicación de consola hecha con
 las librerías de DLC Builder, [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) de
 iminashi (licencia MIT):
 

@@ -4,7 +4,7 @@
 
 **Turn your mp3s into bass CDLC for Rocksmith 2014: on your own PC, for free.**
 
-Put your songs in a folder, run `procesar.bat` and get `.psarc` files ready to play bass in Rocksmith 2014
+Put your songs in a folder, run `process.bat` and get `.psarc` files ready to play bass in Rocksmith 2014
 Remastered. Each song comes with:
 
 - the **bass tab**, with **dynamic difficulty** (DD) like official songs,
@@ -50,15 +50,15 @@ rating** for every song and a list of the ones worth checking.
    custom songs).
 2. Download `auto-cdlc-…-windows.zip` from the
    [latest release](https://github.com/fesaje/auto-cdlc/releases/latest), unzip it and run
-   **`instalar.bat`**.
-3. Put your songs in `entrada` and run **`procesar.bat`**.
+   **`install.bat`**.
+3. Put your songs in `input` and run **`process.bat`**.
 
 Step by step in **[docs/en/installation.md](docs/en/installation.md)**. Quick answers in the
 **[FAQ](docs/en/faq.md)**.
 
 ## Checking and polishing a song
 
-Each song gets its own folder in `salida` with everything used to build it:
+Each song gets its own folder in `output` with everything used to build it:
 
 - **`_AB.mp3`**: with headphones, the real bass on the left and the tab on the right. Wrong notes stand out.
 - **`_clics.mp3`**: a click on every beat, higher on beat 1, to check the bars.
@@ -68,7 +68,7 @@ Each song gets its own folder in `salida` with everything used to build it:
 After editing, rebuild the `.psarc` without analysing the audio again:
 
 ```
-procesar.bat --rebuild "salida\Artist - Title"
+process.bat --rebuild "output\Artist - Title"
 ```
 
 ## Documentation
@@ -76,7 +76,7 @@ procesar.bat --rebuild "salida\Artist - Title"
 - **[Installation](docs/en/installation.md)**: requirements, Wwise, CDLC Enabler, installer and first
   test.
 - **[FAQ](docs/en/faq.md)**: how to use it, checking a song, editing and rebuilding, common problems.
-- **[Usage](docs/en/usage.md)**: the batch questions, the output, every option in `configuracion.txt`.
+- **[Usage](docs/en/usage.md)**: the batch questions, the output, every option in `config.txt`.
 - **[How it works](docs/en/how-it-works.md)**: the pipeline in detail, for the curious and for
   contributors.
 - **[Changelog](CHANGELOG.md)** · **[Third-party software and licences](THIRD_PARTY.md)**.
@@ -94,10 +94,10 @@ procesar.bat --rebuild "salida\Artist - Title"
 
 When you process a batch, it asks whether to send an **anonymous report** for each song: the diagnostics
 and the generated tab, never the audio, the lyrics or your folders. It's optional
-(`enviar_resultados = no` turns it off for good) and it's how the transcription gets better.
+(`send_results = no` turns it off for good) and it's how the transcription gets better.
 
 Found a bug or a song that comes out badly? Open an [issue](https://github.com/fesaje/auto-cdlc/issues)
-and attach the **batch log** (`salida\registro_….txt`). English or Spanish, both welcome.
+and attach the **batch log** (`output\log_….txt`). English or Spanish, both welcome.
 
 ## Legal notice
 

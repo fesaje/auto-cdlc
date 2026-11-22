@@ -14,12 +14,12 @@ notes into a tab, builds the difficulty levels (DD), adds lyrics and album art w
 bass tone and packs the `.psarc`. Everything runs on your PC.
 
 ### How do I process songs?
-1. Put the songs in the **`entrada`** folder (or drag them onto `procesar.bat`).
-2. Double-click **`procesar.bat`**.
+1. Put the songs in the **`input`** folder (or drag them onto `process.bat`).
+2. Double-click **`process.bat`**.
 3. Answer the questions (or just press Enter: the values in brackets are sensible defaults).
-4. Wait. The `.psarc` files end up in the `psarc` folder, or in the one set in `carpeta_psarc`.
+4. Wait. The `.psarc` files end up in the `psarc` folder, or in the one set in `psarc_folder`.
 
-You can keep adding songs to `entrada`: the ones already processed are skipped.
+You can keep adding songs to `input`: the ones already processed are skipped.
 
 ### What will it ask me?
 Once per batch: starting difficulty, simplified arrangement and whether to send anonymous results. Once
@@ -30,12 +30,12 @@ answers within 60 seconds, it uses the defaults and starts on its own, so you ca
 About 3–4 minutes per song on a normal PC. A 100-song batch is a night's work.
 
 ### Where do I put the `.psarc` so the game sees it?
-In Rocksmith's `dlc` folder. The easiest way is to set `carpeta_psarc` in `configuracion.txt` to that
+In Rocksmith's `dlc` folder. The easiest way is to set `psarc_folder` in `config.txt` to that
 folder (the installer offers to do it). The game also needs the **CDLC Enabler**: see
 [Installation](installation.md#cdlc-enabler-lets-rocksmith-load-custom-songs).
 
 ### Can I use it in English?
-Yes: `idioma = en` in `configuracion.txt`. The installer asks the first time.
+Yes: `language = en` in `config.txt`. The installer asks the first time.
 
 ## Quality
 
@@ -45,7 +45,7 @@ basslines will have mistakes. Each song gets a **reliability** level (high, medi
 and at the end of the batch you get a "Worth checking" list.
 
 ### How do I check a song without playing it?
-In its folder inside `salida`:
+In its folder inside `output`:
 - **`_AB.mp3`**, with headphones: the real bass on the left, the tab played back on the right. If they
   don't match, the tab is wrong there.
 - **`_clics.mp3`**: the song with a click on every beat, higher on beat 1. If the high click doesn't fall at
@@ -53,10 +53,10 @@ In its folder inside `salida`:
 - **`informe.txt`**: tuning, time signature, tone, lyrics and warnings.
 
 ### It's too hard to play
-- Lower `dificultad_inicial` (or answer lower when it asks): the song starts with fewer notes and Rocksmith
+- Lower `start_difficulty` (or answer lower when it asks): the song starts with fewer notes and Rocksmith
   adds them as you play well.
 - Use the **simplified arrangement** (second bass arrangement in the game): one note per beat, half bar or
-  bar, depending on `arreglo_simple`.
+  bar, depending on `simple_arrangement`.
 - If the notes don't match what you hear, it's a transcription problem: tell me which song and where
   (see "How do I report a problem?").
 
@@ -66,7 +66,7 @@ wrong notes are enough to fool it. Check `informe.txt`; if the band plays in E s
 
 ### A song says "no bass"
 The separated bass was almost silent: interludes, intros, acoustic songs… It's not an error. Those songs
-are skipped in later batches; to try again, use `--forzar`.
+are skipped in later batches; to try again, use `--force`.
 
 ## Editing by hand
 
@@ -77,7 +77,7 @@ for EOF), the arrangement XMLs and a DLC Builder project (`.rs2dlc`). See
 
 ### How do I rebuild the `.psarc` after editing?
 ```
-procesar.bat --rebuild "salida\Artist - Title"
+process.bat --rebuild "output\Artist - Title"
 ```
 It packs the song again from its project and XMLs, without analysing the audio again. You can pass
 several folders.
@@ -91,16 +91,16 @@ story: follow CustomsForge's rules.
 
 ### No `.psarc` is created
 Almost always Wwise. The final summary lists songs "without .psarc" with the reason. Install Wwise 2019,
-2021, 2022 or 2023; if it's on another drive, put its folder in `wwise` in `configuracion.txt`. Then run
-those songs again with `--forzar`, or use `--rebuild`.
+2021, 2022 or 2023; if it's on another drive, put its folder in `wwise` in `config.txt`. Then run
+those songs again with `--force`, or use `--rebuild`.
 
 ### The update failed
-Usually a network hiccup: run `procesar.bat` again. Your installation is untouched until an update
+Usually a network hiccup: run `process.bat` again. Your installation is untouched until an update
 completes.
 
 ### "Couldn't send the results"
 The server couldn't be reached. In Spain this happens on football match days, when some Cloudflare IPs are
-blocked. Nothing is lost: the results are saved in `envios_pendientes` and sent in the next batch.
+blocked. Nothing is lost: the results are saved in `pending_uploads` and sent in the next batch.
 
 ### The antivirus complains
 It's usually the CDLC Enabler (`D3DX9_42.dll`) or `cdlc-pack.exe`, an unsigned program. Add an exception
@@ -108,14 +108,14 @@ for those folders.
 
 ### How do I report a problem?
 Open an issue on [GitHub](https://github.com/fesaje/auto-cdlc/issues) and attach the batch log,
-`salida\registro_YYYY-MM-DD_HH-MM.txt`. Say which song and, if it's about the tab, roughly where
+`output\log_YYYY-MM-DD_HH-MM.txt`. Say which song and, if it's about the tab, roughly where
 (minute:second).
 
 ## Other
 
 ### What is sent if I say yes to sending results?
 The diagnostics, the report and the generated bass tab of each song. Never the audio, never the lyrics and
-never your user name or folders. It's anonymous and optional: `enviar_resultados = no` turns it off for
+never your user name or folders. It's anonymous and optional: `send_results = no` turns it off for
 good.
 
 ### Guitar?

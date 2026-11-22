@@ -5,7 +5,7 @@
 auto-cdlc se apoya en mucho trabajo ajeno. Ninguno de estos proyectos está afiliado a auto-cdlc. Cada uno
 mantiene su licencia: consulta su repositorio para el texto completo.
 
-## Se instalan con `instalar.bat` (paquetes de Python)
+## Se instalan con `install.bat` (paquetes de Python)
 
 | Proyecto | Uso en auto-cdlc | Licencia |
 |---|---|---|
@@ -30,7 +30,7 @@ licencias.
 
 | Proyecto | Uso | Licencia |
 |---|---|---|
-| [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) (iminashi, librerías de DLC Builder) | `cdlc-pack`: compilación del `.psarc` | MIT (ver `herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt`) |
+| [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) (iminashi, librerías de DLC Builder) | `cdlc-pack`: compilación del `.psarc` | MIT (ver `tools/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt`) |
 
 ## Se consultan o descargan al usarlo
 

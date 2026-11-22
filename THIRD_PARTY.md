@@ -5,7 +5,7 @@
 auto-cdlc builds on a lot of other people's work. None of these projects is affiliated with auto-cdlc.
 Each keeps its own licence: check its repository for the full text.
 
-## Installed by `instalar.bat` (Python packages)
+## Installed by `install.bat` (Python packages)
 
 | Project | Used for | Licence |
 |---|---|---|
@@ -29,7 +29,7 @@ The madmom build in `vendor/` is the original, adapted to work without compiling
 
 | Project | Used for | Licence |
 |---|---|---|
-| [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) (iminashi, DLC Builder's libraries) | `cdlc-pack`: building the `.psarc` | MIT (see `herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt`) |
+| [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) (iminashi, DLC Builder's libraries) | `cdlc-pack`: building the `.psarc` | MIT (see `tools/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt`) |
 
 ## Queried or downloaded while running
 

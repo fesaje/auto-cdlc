@@ -4,7 +4,7 @@
 
 **De mp3 a CDLC de bajo para Rocksmith 2014, en tu PC y gratis.**
 
-Metes tus canciones en una carpeta, ejecutas `procesar.bat` y sales con archivos `.psarc` listos para
+Metes tus canciones en una carpeta, ejecutas `process.bat` y sales con archivos `.psarc` listos para
 tocar el bajo en Rocksmith 2014 Remastered. Cada canción trae:
 
 - la **tablatura de bajo**, con **dificultad dinámica** (DD) como las oficiales,
@@ -50,15 +50,15 @@ y la lista de las que conviene revisar.
    cargue canciones propias).
 2. Descarga `auto-cdlc-…-windows.zip` de la
    [última versión](https://github.com/fesaje/auto-cdlc/releases/latest), descomprímelo y ejecuta
-   **`instalar.bat`**.
-3. Mete tus canciones en `entrada` y ejecuta **`procesar.bat`**.
+   **`install.bat`**.
+3. Mete tus canciones en `input` y ejecuta **`process.bat`**.
 
 Paso a paso en **[docs/es/instalacion.md](docs/es/instalacion.md)**. Respuestas rápidas en las
 **[preguntas frecuentes](docs/es/preguntas-frecuentes.md)**.
 
 ## Revisar y pulir una canción
 
-Cada canción tiene su carpeta en `salida` con todo lo que se usó para crearla:
+Cada canción tiene su carpeta en `output` con todo lo que se usó para crearla:
 
 - **`_AB.mp3`**: con cascos, el bajo real a la izquierda y la tablatura a la derecha. Las notas falsas se
   oyen enseguida.
@@ -69,7 +69,7 @@ Cada canción tiene su carpeta en `salida` con todo lo que se usó para crearla:
 Después de retocar, vuelve a crear el `.psarc` sin analizar otra vez el audio:
 
 ```
-procesar.bat --reempaquetar "salida\Artista - Título"
+process.bat --rebuild "output\Artista - Título"
 ```
 
 ## Documentación
@@ -78,7 +78,7 @@ procesar.bat --reempaquetar "salida\Artista - Título"
 - **[Preguntas frecuentes](docs/es/preguntas-frecuentes.md)**: cómo usarlo, revisar una canción, retocar y
   reempaquetar, problemas habituales.
 - **[Uso](docs/es/uso.md)**: las preguntas de cada tanda, qué sale, todas las opciones de
-  `configuracion.txt`.
+  `config.txt`.
 - **[Cómo funciona](docs/es/funcionamiento.md)**: el proceso por dentro, para curiosos y para quien quiera
   colaborar.
 - **[Historial de cambios](CHANGELOG.es.md)** · **[Software de terceros y licencias](TERCEROS.md)**.
@@ -96,10 +96,10 @@ procesar.bat --reempaquetar "salida\Artista - Título"
 
 Al procesar una tanda pregunta si quieres enviar un **informe anónimo** de cada canción: el diagnóstico y
 la tablatura generada, nunca el audio, la letra ni tus carpetas. Es voluntario
-(`enviar_resultados = no` lo quita para siempre) y es lo que permite mejorar la transcripción.
+(`send_results = no` lo quita para siempre) y es lo que permite mejorar la transcripción.
 
 ¿Un fallo o una canción que sale mal? Abre una [incidencia](https://github.com/fesaje/auto-cdlc/issues) y
-adjunta el **registro de la tanda** (`salida\registro_….txt`). En español o en inglés.
+adjunta el **registro de la tanda** (`output\log_….txt`). En español o en inglés.
 
 ## Aviso legal
 

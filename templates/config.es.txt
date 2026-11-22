@@ -1,82 +1,88 @@
 # Configuración de auto-cdlc. Las líneas que empiezan por # no cuentan. Guía completa: docs/es/uso.md
+# Las claves y los valores van en inglés; los valores en español de versiones anteriores también valen
+# (si/no, limpio, tiempo...).
 
-# Idioma de los menús, preguntas e informes: es (español) o en (inglés). Lo pregunta instalar.bat.
-idioma =
+# Idioma de los menús, preguntas e informes: es (español) o en (inglés). Lo pregunta install.bat.
+language =
 
 # Carpeta donde se dejan los .psarc. Si pones la carpeta dlc de Rocksmith, aparecen directamente en el juego.
-# Ejemplo: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
+# Ejemplo: psarc_folder = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
 # Si no pones nada, van a la carpeta psarc que está junto a este archivo.
-carpeta_psarc =
+psarc_folder =
 
-# Compilar los .psarc (si) o dejar solo el proyecto .rs2dlc para DLC Builder (no).
-compilar_psarc = si
+# Compilar los .psarc (yes) o dejar solo el proyecto .rs2dlc para DLC Builder (no).
+build_psarc = yes
 
-# Buscar las carátulas en internet (iTunes / Deezer).
-buscar_caratulas = si
+# Buscar en internet carátulas, tonos oficiales y letras (yes / no). Con "no" no se conecta a nada.
+online = yes
 
 # Wwise: su carpeta o la ruta a WwiseConsole.exe. Normalmente se encuentra solo (Program Files o la
 # variable WWISEROOT); rellénalo solo si no lo encuentra, por ejemplo si está en otra unidad.
-# Ejemplo: wwise = C:\Program Files (x86)\Audiokinetic\Wwise 2021.1.14.8108\Authoring\x64\Release\bin\WwiseConsole.exe
+# Ejemplo: wwise = D:\Audiokinetic\Wwise 2021.1.14.8108
 wwise =
 
 # Desvío mínimo (en cents) de la grabación respecto a La=440 para cambiar el Tuning Pitch.
 # Por debajo se deja en 440 y no tienes que reafinar en cada canción. 100 cents = 1 semitono.
-umbral_cents = 30
+cents_threshold = 30
 
 # Dificultad dinámica (DD), la que va subiendo de nivel según tocas bien:
-#   propia     = hasta 10 niveles por pulso, como en las canciones oficiales: se empieza con una nota
+#   own        = hasta 10 niveles por frase, como en las canciones oficiales: se empieza con una nota
 #                cada dos compases y se van añadiendo (compás, medio compás, tiempo, corchea, completa;
 #                cada paso primero en los compases impares y luego en todos) (recomendada)
-#   dlcbuilder = la que genera DLC Builder (la de antes)
-#   ninguna    = sin DD: siempre la canción completa, pero Rocksmith no muestra porcentaje
-dificultad = propia
+#   dlcbuilder = la que genera DLC Builder
+#   none       = sin DD: siempre la canción completa, pero Rocksmith no muestra porcentaje
+difficulty = own
 
-# Dificultad inicial (solo con dificultad = propia): % de notas con el que empieza cada frase.
+# Dificultad inicial (solo con difficulty = own): % de notas con el que empieza cada frase.
 #   0  = desde lo más sencillo, como las oficiales (recomendado)
-#   50 = empieza ya con al menos el 50 % de las notas de cada frase (se quitan los niveles más fáciles;
-#        quedan 3 o 4 niveles y se pasa muy rápido a la canción completa)
-dificultad_inicial = 0
+#   50 = empieza ya con al menos el 50 % de las notas de cada frase (se quitan los niveles más fáciles)
+# Es el valor por defecto: se pregunta antes de cada tanda.
+start_difficulty = 0
 
 # Notas repetidas (La-La-La-La): cortar las notas largas donde el bajo vuelve a pulsar la misma nota.
 # Si ves notas partidas que en realidad son una sola nota larga, pon "no" o sube el umbral (en dB).
-partir_repetidas = si
-umbral_reataque_db = 3
+split_repeated = yes
+reattack_threshold_db = 3
 
-# Tono de cada nota con CREPE (red neuronal, más fiable en notas graves que el método anterior).
-tono_crepe = si
+# Tono de cada nota con CREPE (red neuronal, más fiable en notas graves).
+crepe_pitch = yes
 
 # Sonido del bajo en el juego (ampli y pedales).
 #   auto       -> si la canción o el artista tiene DLC oficial de Rocksmith, su tono; si no, limpio
 #                 (y si se detecta púa, el limpio brillante).
-#   limpio     -> limpio redondo, para tocar con dedos
-#   limpio_pua -> limpio brillante (el de Ramones - Blitzkrieg Bop)
-#   saturado   -> overdrive suave (Bon Jovi - It's My Life)
-#   distorsion -> distorsión fuerte (Motörhead - Ace of Spades)
+#   clean      -> limpio redondo, para tocar con dedos
+#   clean_pick -> limpio brillante (el de Ramones - Blitzkrieg Bop)
+#   overdrive  -> overdrive suave (Bon Jovi - It's My Life)
+#   distortion -> distorsión fuerte (Motörhead - Ace of Spades)
 #   fuzz       -> fuzz (Nirvana - Breed)
 #   o el nombre de cualquier tono oficial, p. ej. RageKilling_bassdist o Hysteria_bass.
 # Es el valor por defecto: antes de cada tanda se pregunta el tono de cada disco.
-tono_bajo = auto
+bass_tone = auto
 
 # Velocidad a la que vienen las notas por el mástil en el juego (de 0.5 a 5).
 # Más baja = ves las notas con más antelación (más fácil de leer); más alta = más precisión.
 # 1.3 es la que pone DLC Builder por defecto.
 # Con "auto" se ajusta al tempo de cada canción: el número es la velocidad a 120 BPM y se sube o baja
-# en proporción (a 60 BPM la mitad, a 180 vez y media), entre 0.9 y 2.2. Ejemplo: velocidad_scroll = auto 1.3
-velocidad_scroll = 1.3
+# en proporción (a 60 BPM la mitad, a 180 vez y media), entre 0.9 y 2.2. Ejemplo: scroll_speed = auto 1.3
+scroll_speed = 1.3
 
 # Segundo arreglo de bajo, simplificado (sale como 'Alt. Bass' en el juego, con su propia DD).
-#   tiempo -> una nota por tiempo | medio -> una por medio compás | compas -> una por compás
-#   corchea -> una por corchea    | no -> sin segundo arreglo
-arreglo_simple = tiempo
+#   beat -> una nota por tiempo | half -> una por medio compás | bar -> una por compás
+#   eighth -> una por corchea   | no -> sin segundo arreglo
+simple_arrangement = beat
 
 # Letra en pantalla mientras tocas, si está en LRCLIB (base libre de letras sincronizadas).
 # Va sincronizada por líneas: dentro de cada línea las palabras van repartidas, no clavadas.
-letra = si
+lyrics = yes
 
 # Antes de empezar se pregunta la dificultad inicial y el arreglo simplificado de la tanda, y el tono y
 # la púa de cada disco (Intro = lo de aquí, o lo que elegiste la última vez para ese disco).
 # Si nadie contesta en estos segundos, se usan los valores por defecto y la tanda arranca sola.
-espera_preguntas = 60
+question_timeout = 60
 
-# Buscar versiones nuevas al empezar y ofrecer instalarlas (si / no).
-buscar_actualizaciones = si
+# Buscar versiones nuevas al empezar y ofrecer instalarlas (yes / no).
+check_updates = yes
+
+# Enviar un informe anónimo de cada canción para ayudar a mejorar auto-cdlc (nunca el audio ni la letra).
+#   ask = preguntarlo en cada tanda (por defecto sí) | yes = siempre | no = nunca
+send_results = ask

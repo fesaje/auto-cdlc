@@ -1,26 +1,27 @@
-# entorno y cachés
+# environment and caches
 .venv/
 __pycache__/
 *.pyc
 bin/
-# lo que genera el programa o se descarga solo
-salida/*
-!salida/.gitkeep
-entrada/*
-!entrada/.gitkeep
-modelos/*
-!modelos/.gitkeep
+# created by the program or downloaded on demand
+config.txt
+output/*
+!output/.gitkeep
+input/*
+!input/.gitkeep
+models/*
+!models/.gitkeep
 psarc/
-# cdlc-pack compilado: va en las releases de GitHub (lo baja instalar.bat)
-herramientas/cdlc-pack/*
-!herramientas/cdlc-pack/codigo/
-!herramientas/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt
+pending_uploads/
+.instalacion
+*.bat.nuevo
+# compiled cdlc-pack: shipped in the GitHub releases (install.bat downloads it)
+tools/cdlc-pack/*
+!tools/cdlc-pack/codigo/
+!tools/cdlc-pack/LICENCIA-Rocksmith2014.NET.txt
 
-# servidor de envíos
+# results server (developer only)
 desarrollo/servidor/.wrangler/
 desarrollo/servidor/.dev.vars
 desarrollo/servidor/node_modules/
 desarrollo/envios/
-.instalacion
-procesar.bat.nuevo
-envios_pendientes/

@@ -2,15 +2,15 @@
 
 **English** | [Español](../es/funcionamiento.md)
 
-The whole pipeline is in `cdlc_bajo.py`. The figures in this document are those of version 0.3.
+The whole pipeline is in `auto_cdlc.py`. The figures in this document are those of version 0.3.
 
 ## 1. Preparing the batch
 
-`entrada` is compared with `salida`: a song is done if its folder has the `.gp5`. Pending songs are
+`input` is compared with `output`: a song is done if its folder has the `.gp5`. Pending songs are
 grouped by album artist and album, taken from the tags, or from an iTunes search if there's no album.
 
 Earlier logs tell which songs failed and how long a song takes on average. Each album's answers are saved
-in `salida/ajustes_discos.json`.
+in `output/album_settings.json`.
 
 ## 2. Bass separation
 
@@ -86,7 +86,7 @@ The program writes:
 - each arrangement's XML in Rocksmith format;
 - the DLC Builder `.rs2dlc` project, on which DLC Builder's own checks are repeated.
 
-It's built by **cdlc-pack** (`herramientas/cdlc-pack/codigo`), a small console application based on DLC
+It's built by **cdlc-pack** (`tools/cdlc-pack/codigo`), a small console application based on DLC
 Builder's libraries, [Rocksmith2014.NET](https://github.com/iminashi/Rocksmith2014.NET) by iminashi (MIT
 licence):
 

@@ -7,6 +7,16 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.5.0**: user-facing names in English, with the old ones still understood.
+  - Folders `input`, `output`, `models`, `tools`, `pending_uploads`; `process.bat` and `install.bat`;
+    `config.txt` with English keys and values; options `--force`, `--no-questions`, `--no-update`,
+    `--no-psarc`, `--offline`, `--rebuild`, `--output`; script `auto_cdlc.py`; batch logs `log_*.txt`.
+  - Existing installs are converted on the first run: folders renamed (contents merged), `configuracion.txt`
+    turned into `config.txt` (copy kept as `configuracion.txt.bak`), obsolete files removed.
+  - `procesar.bat` and `instalar.bat` remain as shortcuts; Spanish keys, values and options keep working.
+  - `install.bat` asks for the language and leaves the configuration, Wwise check and Rocksmith's `dlc`
+    folder to the program itself.
+  - Comments in English for the configuration, batch, packaging, upload and update code.
 - **0.4.3**: the update download retries, and if GitHub's code server can't be reached it
   falls back to the Windows package attached to the release. Results that can't be sent (e.g. Cloudflare
   IPs blocked in Spain during football matches) are saved in `envios_pendientes` and sent in the next batch.

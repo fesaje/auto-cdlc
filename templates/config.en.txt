@@ -1,83 +1,87 @@
 # auto-cdlc configuration. Lines starting with # are ignored. Full guide: docs/en/usage.md
-# Keys and values stay in Spanish (they're shared with the Spanish version); the comments explain them.
+# Spanish values from earlier versions are also accepted (si/no, limpio, tiempo...).
 
-# Language of menus, questions and reports: es (Spanish) or en (English). Asked by instalar.bat.
-idioma = en
+# Language of menus, questions and reports: en (English) or es (Spanish). Asked by install.bat.
+language =
 
 # Folder where the .psarc files are saved. If you use Rocksmith's dlc folder, they show up straight in the game.
-# Example: carpeta_psarc = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
+# Example: psarc_folder = C:\Program Files (x86)\Steam\steamapps\common\Rocksmith2014\dlc
 # If empty, they go to the psarc folder next to this file.
-carpeta_psarc =
+psarc_folder =
 
-# Build the .psarc files (si = yes) or only leave the .rs2dlc project for DLC Builder (no).
-compilar_psarc = si
+# Build the .psarc files (yes) or only leave the .rs2dlc project for DLC Builder (no).
+build_psarc = yes
 
-# Look up album art online (iTunes / Deezer). With "no" nothing goes online: no art, official tones or lyrics.
-buscar_caratulas = si
+# Look up album art, official tones and lyrics online (yes / no). With "no" nothing goes online.
+online = yes
 
 # Wwise: its folder or the path to WwiseConsole.exe. It's usually found automatically (Program Files or
 # the WWISEROOT variable); fill it in only if it isn't, for example if it's on another drive.
-# Example: wwise = C:\Program Files (x86)\Audiokinetic\Wwise 2021.1.14.8108\Authoring\x64\Release\bin\WwiseConsole.exe
+# Example: wwise = D:\Audiokinetic\Wwise 2021.1.14.8108
 wwise =
 
 # Minimum deviation (in cents) of the recording from A=440 before the Tuning Pitch is changed.
 # Below it, 440 is kept so you don't have to retune for every song. 100 cents = 1 semitone.
-umbral_cents = 30
+cents_threshold = 30
 
 # Dynamic difficulty (DD), which levels up as you play well:
-#   propia     = up to 10 levels per phrase, like official songs: it starts with one note every two
+#   own        = up to 10 levels per phrase, like official songs: it starts with one note every two
 #                bars and adds more (bar, half bar, beat, eighth, complete; each step first in the odd
 #                bars and then in all of them) (recommended)
 #   dlcbuilder = the one DLC Builder generates
-#   ninguna    = no DD: always the full song, but Rocksmith shows no percentage
-dificultad = propia
+#   none       = no DD: always the full song, but Rocksmith shows no percentage
+difficulty = own
 
-# Starting difficulty (only with dificultad = propia): % of notes each phrase starts with.
+# Starting difficulty (only with difficulty = own): % of notes each phrase starts with.
 #   0  = from the simplest, like official songs (recommended)
 #   50 = starts with at least 50 % of each phrase's notes (the easiest levels are removed)
 # It's the default: it's asked before every batch.
-dificultad_inicial = 0
+start_difficulty = 0
 
 # Repeated notes (A-A-A-A): split long notes where the bass plucks the same note again.
 # If you see split notes that are really one long note, set "no" or raise the threshold (in dB).
-partir_repetidas = si
-umbral_reataque_db = 3
+split_repeated = yes
+reattack_threshold_db = 3
 
 # Pitch of each note with CREPE (neural network, more reliable on low notes).
-tono_crepe = si
+crepe_pitch = yes
 
 # In-game bass sound (amp and pedals).
 #   auto       -> if the song or the artist has official Rocksmith DLC, its tone; otherwise clean
 #                 (and the bright clean one if a pick is detected).
-#   limpio     -> round clean tone, for fingers          (clean also works)
-#   limpio_pua -> bright clean (Ramones - Blitzkrieg Bop) (clean_pick also works)
-#   saturado   -> mild overdrive (Bon Jovi - It's My Life) (overdrive also works)
-#   distorsion -> heavy distortion (Motörhead - Ace of Spades) (distortion also works)
+#   clean      -> round clean tone, for fingers
+#   clean_pick -> bright clean (Ramones - Blitzkrieg Bop)
+#   overdrive  -> mild overdrive (Bon Jovi - It's My Life)
+#   distortion -> heavy distortion (Motörhead - Ace of Spades)
 #   fuzz       -> fuzz (Nirvana - Breed)
 #   or the name of any official tone, e.g. RageKilling_bassdist or Hysteria_bass.
 # It's the default: each album's tone is asked before every batch.
-tono_bajo = auto
+bass_tone = auto
 
 # How fast notes come down the highway in the game (0.5 to 5).
 # Lower = you see notes further ahead (easier to read); higher = more precision.
 # 1.3 is DLC Builder's default.
 # With "auto" it follows each song's tempo: the number is the speed at 120 BPM and it goes up or down
-# in proportion (half at 60 BPM, one and a half times at 180), between 0.9 and 2.2. Example: velocidad_scroll = auto 1.3
-velocidad_scroll = 1.3
+# in proportion (half at 60 BPM, one and a half times at 180), between 0.9 and 2.2. Example: scroll_speed = auto 1.3
+scroll_speed = 1.3
 
 # Second, simplified bass arrangement (shows as 'Alt. Bass' in the game, with its own DD).
-#   beat (tiempo) -> one note per beat | half (medio) -> one per half bar | bar (compas) -> one per bar
-#   eighth (corchea) -> one per eighth note | no -> no second arrangement
-arreglo_simple = beat
+#   beat -> one note per beat | half -> one per half bar | bar -> one per bar
+#   eighth -> one per eighth note | no -> no second arrangement
+simple_arrangement = beat
 
 # On-screen lyrics while you play, if they're on LRCLIB (free database of synced lyrics).
 # They're synced by line: within each line the words are spread out, not exact.
-letra = si
+lyrics = yes
 
 # Before starting, the batch's starting difficulty and simplified arrangement are asked, plus each album's
 # tone and pick (Enter = the value here, or what you chose last time for that album).
 # If nobody answers within these seconds, the defaults are used and the batch starts on its own.
-espera_preguntas = 60
+question_timeout = 60
 
-# Check for new versions when starting and offer to install them (si = yes / no).
-buscar_actualizaciones = si
+# Check for new versions when starting and offer to install them (yes / no).
+check_updates = yes
+
+# Send an anonymous report of each song to help improve auto-cdlc (never the audio or the lyrics).
+#   ask = ask in every batch (default yes) | yes = always | no = never
+send_results = ask

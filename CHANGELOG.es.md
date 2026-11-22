@@ -7,6 +7,18 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
+- **0.5.0**: los nombres que ve el usuario pasan al inglés, y los antiguos se siguen entendiendo.
+  - Carpetas `input`, `output`, `models`, `tools`, `pending_uploads`; `process.bat` e `install.bat`;
+    `config.txt` con claves y valores en inglés; opciones `--force`, `--no-questions`, `--no-update`,
+    `--no-psarc`, `--offline`, `--rebuild`, `--output`; script `auto_cdlc.py`; registros `log_*.txt`.
+  - Las instalaciones existentes se convierten la primera vez: se renombran las carpetas (juntando su
+    contenido), `configuracion.txt` pasa a `config.txt` (queda copia en `configuracion.txt.bak`) y se borran
+    los archivos que ya no se usan.
+  - `procesar.bat` e `instalar.bat` se quedan como atajos; las claves, valores y opciones en español siguen
+    funcionando.
+  - `install.bat` pregunta el idioma y deja la configuración, la comprobación de Wwise y la carpeta `dlc` de
+    Rocksmith al propio programa.
+  - Comentarios en inglés en el código de configuración, tandas, empaquetado, envíos y actualizaciones.
 - **0.4.3**: la descarga de la actualización reintenta y, si no llega al servidor de código
   de GitHub, usa el paquete para Windows adjunto a la release. Los resultados que no se pueden enviar (p. ej.
   por los bloqueos de IPs de Cloudflare en España en días de fútbol) se guardan en `envios_pendientes` y se

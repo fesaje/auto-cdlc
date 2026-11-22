@@ -4,52 +4,58 @@
 
 ## Procesar canciones
 
-Los menús, las preguntas y los informes salen en el idioma elegido al instalar (`idioma = es` o `en` en
-`configuracion.txt`).
+Los menús, las preguntas y los informes salen en el idioma elegido al instalar (`language = es` o `en` en
+`config.txt`).
+
+Desde la 0.5, las carpetas, los archivos, las opciones y las claves de `config.txt` van en inglés para todo
+el mundo. Si vienes de la 0.4 o anterior, la primera vez se renombran tus carpetas (`entrada` → `input`,
+`salida` → `output`…) y tu `configuracion.txt` se convierte en `config.txt` (queda una copia en
+`configuracion.txt.bak`). Los nombres antiguos (`procesar.bat`, `--forzar`, claves y valores en español)
+siguen funcionando.
 
 **Actualizaciones**: al empezar, el programa mira si hay una versión nueva publicada. Si la hay, enseña
 las novedades y pregunta si actualizar. La actualización:
 
 - no toca tu configuración, tus canciones ni los modelos descargados;
-- añade a `configuracion.txt` las opciones nuevas, si las hay;
+- añade a `config.txt` las opciones nuevas, si las hay;
 - vuelve a lanzar el programa con la versión nueva.
 
-Si la tanda va desatendida, no se actualiza. Se desactiva con `buscar_actualizaciones = no` o
-`--sin-actualizar`.
+Si la tanda va desatendida, no se actualiza. Se desactiva con `check_updates = no` o
+`--no-update`.
 
-- **Por lotes:** mete las canciones (mp3, flac, wav, ogg, m4a…) en la carpeta **`entrada`** y haz doble
-  clic en **`procesar.bat`**. Puedes ir dejando canciones ahí: las ya procesadas se saltan.
-- **Sueltas:** arrastra canciones o una carpeta encima de `procesar.bat`.
+- **Por lotes:** mete las canciones (mp3, flac, wav, ogg, m4a…) en la carpeta **`input`** y haz doble
+  clic en **`process.bat`**. Puedes ir dejando canciones ahí: las ya procesadas se saltan.
+- **Sueltas:** arrastra canciones o una carpeta encima de `process.bat`.
 
 ### Antes de empezar: las preguntas de la tanda
 
-1. **Revisa lo pendiente.** Compara `entrada` con `salida` y te dice cuántas hay, cuántas están hechas y
+1. **Revisa lo pendiente.** Compara `input` con `output` y te dice cuántas hay, cuántas están hechas y
    cuántas faltan.
 2. **Agrupa por artista > disco**, con las etiquetas del mp3 (artista del disco y álbum). Si una canción
    no trae disco, lo busca en internet por artista y título. Si tampoco aparece, va a "(sin disco)".
 3. **Fallidas de tandas anteriores**: si hay canciones que dieron error, las enseña y pregunta si
-   reintentarlas. Las que no tenían bajo (interludios, intros) se saltan sin preguntar. Por defecto no. Las que no se reintentan salen de la
-   tanda y no se pregunta nada sobre ellas.
+   reintentarlas (por defecto, no). Las que no se reintentan salen de la tanda y no se pregunta nada sobre
+   ellas. Las que no tenían bajo (interludios, intros) se saltan sin preguntar.
 4. **Preguntas de la tanda**: dificultad inicial, arreglo simplificado y si quieres **enviar los
    resultados** para ayudar a mejorar auto-cdlc (ver más abajo).
 5. **Preguntas de cada disco**: tono del bajo y púa (`auto`, `pua` o `dedos`).
 6. **Resumen**: ajustes, discos, número de canciones y tiempo estimado. Al final, "¿Empezar? (s/n)".
 
-En todas las preguntas, **Intro** deja lo que hay entre corchetes. Es lo de `configuracion.txt`, o lo que
-elegiste la última vez para ese disco (se guarda en `salida\ajustes_discos.json`).
+En todas las preguntas, **Intro** deja lo que hay entre corchetes. Es lo de `config.txt`, o lo que
+elegiste la última vez para ese disco (se guarda en `output\album_settings.json`).
 
-Si nadie contesta en 60 segundos (`espera_preguntas`), se usan los valores por defecto en todo y la tanda
-arranca sola: puedes lanzarla y marcharte. Con `--sin-preguntas` no pregunta nada.
+Si nadie contesta en 60 segundos (`question_timeout`), se usan los valores por defecto en todo y la tanda
+arranca sola: puedes lanzarla y marcharte. Con `--no-questions` no pregunta nada.
 
 Cada canción tarda unos 3-4 minutos, según el ordenador. Al final, el resumen lista las canciones que
 conviene revisar (fiabilidad baja), las que se quedaron sin `.psarc` y las que no tenían bajo, y ofrece sacar
-los archivos de la tanda de `entrada` (a `entrada\procesadas` y `entrada\descartadas`).
+los archivos de la tanda de `input` (a `input\processed` y `input\discarded`).
 
 ### Qué sale
 
-- Los **`.psarc`** van a la carpeta `psarc`, o a la que pongas en `carpeta_psarc` (lo práctico es la
+- Los **`.psarc`** van a la carpeta `psarc`, o a la que pongas en `psarc_folder` (lo práctico es la
   `dlc` de Rocksmith).
-- En **`salida\Artista - Título\`** queda todo lo demás:
+- En **`output\Artista - Título\`** queda todo lo demás:
 
 | Archivo | Para qué |
 |---|---|
@@ -63,42 +69,43 @@ los archivos de la tanda de `entrada` (a `entrada\procesadas` y `entrada\descart
 | `*_clics.mp3` | La canción con un clic en cada pulso, más agudo en el tiempo 1. |
 | `*.gp5`, `*.svl`, `*.mid` | Tablatura (Guitar Pro), mapa de pulsos y MIDI, para Editor on Fire. |
 
-- En `salida` queda además el **registro de cada tanda** (`registro_AAAA-MM-DD_HH-MM.txt`): una línea
+- En `output` queda además el **registro de cada tanda** (`log_AAAA-MM-DD_HH-MM.txt`): una línea
   por canción, los informes y el diagnóstico completo. Es el archivo que hay que adjuntar si algo falla.
 
-## `configuracion.txt`
+## `config.txt`
 
 | Clave | Valores | Para qué |
 |---|---|---|
-| `carpeta_psarc` | ruta | Dónde dejar los `.psarc`. Vacío: carpeta `psarc` del programa. |
-| `compilar_psarc` | `si` / `no` | Con `no` solo se genera el proyecto `.rs2dlc`. |
-| `buscar_caratulas` | `si` / `no` | Con `no` no se conecta a internet: sin carátulas, tonos oficiales ni letra. |
+| `psarc_folder` | ruta | Dónde dejar los `.psarc`. Vacío: carpeta `psarc` del programa. |
+| `build_psarc` | `yes` / `no` | Con `no` solo se genera el proyecto `.rs2dlc`. |
+| `online` | `yes` / `no` | Con `no` no se conecta a internet: sin carátulas, tonos oficiales, letra ni actualizaciones. |
 | `wwise` | ruta | Carpeta de Wwise o ruta de `WwiseConsole.exe`, solo si no lo encuentra solo (mira Program Files y `WWISEROOT`). |
-| `umbral_cents` | número (30) | Desvío mínimo de la grabación respecto a La = 440 para cambiar el *Tuning Pitch*. |
-| `dificultad` | `propia` / `dlcbuilder` / `ninguna` | Tipo de dificultad dinámica (ver abajo). |
-| `dificultad_inicial` | 0–95 | % de notas con que empieza cada frase. Se pregunta en cada tanda. |
-| `partir_repetidas`, `umbral_reataque_db` | `si` / `no`, dB (3) | Cortar las notas repetidas que salen como una larga. |
-| `tono_crepe` | `si` / `no` | Tono de cada nota con la red CREPE. |
-| `tono_bajo` | `auto`, `limpio`, `limpio_pua`, `saturado`, `distorsion`, `fuzz` o un tono oficial | Sonido del bajo. Es el valor por defecto de la pregunta de cada disco. |
-| `velocidad_scroll` | 0.5–5, o `auto 1.3` | Velocidad de las notas por el mástil (ver abajo). |
-| `arreglo_simple` | `tiempo`, `medio`, `compas`, `corchea`, `no` | Segundo arreglo simplificado. Se pregunta en cada tanda. |
-| `letra` | `si` / `no` | Letra en pantalla desde LRCLIB. |
-| `espera_preguntas` | segundos (60) | Tiempo sin respuesta antes de arrancar con los valores por defecto. |
-| `idioma` | `es` / `en` | Idioma de menús, preguntas e informes. Lo pregunta `instalar.bat`. |
-| `buscar_actualizaciones` | `si` / `no` | Buscar versiones nuevas al empezar y ofrecer instalarlas. |
-| `enviar_resultados` | `preguntar` / `si` / `no` | Envío voluntario de resultados (por defecto se pregunta en cada tanda). |
+| `cents_threshold` | número (30) | Desvío mínimo de la grabación respecto a La = 440 para cambiar el *Tuning Pitch*. |
+| `difficulty` | `own` (propia) / `dlcbuilder` / `none` (ninguna) | Tipo de dificultad dinámica (ver abajo). |
+| `start_difficulty` | 0–95 | % de notas con que empieza cada frase. Se pregunta en cada tanda. |
+| `split_repeated`, `reattack_threshold_db` | `yes` / `no`, dB (3) | Cortar las notas repetidas que salen como una larga. |
+| `crepe_pitch` | `yes` / `no` | Tono de cada nota con la red CREPE. |
+| `bass_tone` | `auto`, `clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz` o un tono oficial | Sonido del bajo. Es el valor por defecto de la pregunta de cada disco. |
+| `scroll_speed` | 0.5–5, o `auto 1.3` | Velocidad de las notas por el mástil (ver abajo). |
+| `simple_arrangement` | `beat`, `half`, `bar`, `eighth`, `no` | Segundo arreglo simplificado. Se pregunta en cada tanda. |
+| `lyrics` | `yes` / `no` | Letra en pantalla desde LRCLIB. |
+| `question_timeout` | segundos (60) | Tiempo sin respuesta antes de arrancar con los valores por defecto. |
+| `language` | `es` / `en` | Idioma de menús, preguntas e informes. Lo pregunta `install.bat`. |
+| `check_updates` | `yes` / `no` | Buscar versiones nuevas al empezar y ofrecer instalarlas. |
+| `send_results` | `ask` / `yes` / `no` | Envío voluntario de resultados (por defecto se pregunta en cada tanda). |
 
-Opciones de la línea de comandos: `--forzar` (repite canciones ya hechas), `--sin-preguntas`, `--sin-actualizar`,
-`--sin-psarc`, `--sin-internet`, `--psarc CARPETA`, `--wwise RUTA` y `--salida CARPETA`.
+Opciones de la línea de comandos (para `process.bat` o `uv run auto_cdlc.py`): `--force` (repite canciones
+ya hechas), `--no-questions`, `--no-update`, `--no-psarc`, `--offline`, `--rebuild` (ver abajo),
+`--psarc CARPETA`, `--wwise RUTA` y `--output CARPETA`. `--help` las lista todas.
 
 ### Dificultad dinámica
 
-Con `dificultad = propia`, cada frase de 4 compases empieza con muy pocas notas y va sumando por pasos
+Con `difficulty = own`, cada frase de 4 compases empieza con muy pocas notas y va sumando por pasos
 rítmicos: una nota por compás, por medio compás, por tiempo, por corchea y todas. Cada paso entra
 primero en los compases impares de la frase y luego en todos, hasta 10 niveles. Las frases que se repiten
 (estribillos, estrofas) comparten progreso.
 
-`dificultad_inicial` quita los niveles más fáciles. Con 50, cada frase empieza ya con la mitad de sus
+`start_difficulty` quita los niveles más fáciles. Con 50, cada frase empieza ya con la mitad de sus
 notas.
 
 ### Tono del bajo
@@ -106,7 +113,7 @@ notas.
 - `auto`: si la canción o el artista tienen DLC oficial, usa su tono. Para eso consulta una base de
   1.611 tonos de bajo oficiales, la misma que usa DLC Builder. Si no, usa el limpio, o el limpio
   brillante si se detecta púa.
-- `limpio`, `limpio_pua`, `saturado`, `distorsion`, `fuzz`: tonos de canciones oficiales elegidos como
+- `clean` (limpio), `clean_pick` (limpio con púa), `overdrive` (saturado), `distortion`, `fuzz`: tonos de canciones oficiales elegidos como
   referencia para cada tipo de sonido.
 - También vale el nombre de cualquier tono oficial, por ejemplo `RageKilling_bassdist`.
 
@@ -128,10 +135,10 @@ siempre entre 0.9 y 2.2.
 En el juego aparece como **"Alt. Bass"**, junto al bajo normal. Solo lleva las notas de los puntos fuertes
 del ritmo:
 
-- `tiempo`: una por pulso (por defecto);
-- `medio`: una por medio compás;
-- `compas`: una por compás;
-- `corchea`: una por corchea.
+- `beat`: una por tiempo (por defecto);
+- `half`: una por medio compás;
+- `bar`: una por compás;
+- `eighth`: una por corchea.
 
 Cada nota se mantiene hasta la siguiente. Tiene su propia dificultad dinámica y su propio porcentaje.
 
@@ -158,7 +165,7 @@ Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan ant
 - **Afinación**: E estándar, Eb, Drop D, D, Drop C#, C#, Drop C, C, Drop B o B estándar. Se queda en E
   estándar salvo que haya notas graves que no quepan. El afinador de Rocksmith te pide la correcta.
 - **Referencia de afinación de la grabación**: muchos discos no están a La = 440 Hz. Si el desvío es
-  grande (`umbral_cents`), se pone como *Tuning Pitch*.
+  grande (`cents_threshold`), se pone como *Tuning Pitch*.
 - **Púa o dedos**, por el "clic" del ataque. Se puede fijar por disco.
 - **Compás**: 4/4 o 3/4 (también 6/8), con compases sueltos de 2 a 6 tiempos. El informe da el minuto
   de cada compás irregular.
@@ -192,7 +199,7 @@ Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan ant
   guardar el XML de EOF encima de `..._bass_RS2.xml`), vuelve a crear el `.psarc` sin analizar el audio:
 
   ```
-  procesar.bat --reempaquetar "salida\Artista - Título"
+  process.bat --rebuild "output\Artista - Título"
   ```
 
   Se pueden pasar varias carpetas o archivos `.rs2dlc`. Usa el mismo Wwise y la misma carpeta `psarc`
