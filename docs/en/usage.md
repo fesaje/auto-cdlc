@@ -186,6 +186,41 @@ about 10 KB per song. It helps find the cases where the program fails and improv
 - Dynamic difficulty goes up by itself as you play well. To play everything from the start: **Riff
   Repeater** → select the whole song → *Set Difficulty* to 100 %.
 
+## The interface (`auto-cdlc.bat`)
+
+Since 0.5.1 there is also a text interface, in the style of Midnight Commander: run **`auto-cdlc.bat`**.
+It works with the mouse or the keyboard and has three tabs:
+
+- **Songs**: every processed song with its reliability, BPM, tuning, tone, pick, scroll speed and
+  arrangement. Select one to see its report. Keys: **e** retouch (tone, pick, speed… see below), **b**
+  build the `.psarc` again, **o** open its folder, **c** play the clicks, **a** play the A/B, **r** refresh.
+- **Batch**: the songs in `input` (the ones already processed are marked). Tick the ones you want, choose
+  starting difficulty, simplified arrangement, tone, pick and whether to send results, and press
+  **Start**. The progress shows up below. It's the same as `process.bat`, without the questions.
+- **Settings**: every option in `config.txt`, with a short explanation. **Save** writes them to the file.
+
+`process.bat` keeps working as always and is still the one that checks for updates.
+
+## Retouching a song without analysing it again
+
+Tone, pick, scroll speed, simplified arrangement and starting difficulty can be changed afterwards in a few
+seconds, without analysing the audio again. From the interface (**e** on the song) or from the command line:
+
+```
+process.bat --regenerate "output\Artist - Title" --tone fuzz --pick yes --scroll 1.6
+```
+
+Options: `--tone` (`auto`, `clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz` or an official tone
+name), `--pick yes|no`, `--scroll` (0.5–5), `--simple no|bar|half|beat|eighth` and `--start-difficulty`
+(%). Whatever you don't pass is kept. It rewrites the XMLs and the DLC Builder project and builds the
+`.psarc` again; the change is noted at the end of `informe.txt`.
+
+Songs processed before 0.5.1 don't have the saved analysis (`analisis.json`), so for those only tone, pick
+and speed can be changed.
+
+The same options without `--regenerate` apply to a whole batch and skip those questions:
+`process.bat --tone overdrive --pick no --simple bar`. `--send yes|no` too.
+
 ## Building or editing by hand
 
 - **DLC Builder**: open the `.rs2dlc` (*Project → Open Project…*) and press *Build*. Useful if the

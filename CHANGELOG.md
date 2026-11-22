@@ -7,6 +7,16 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.5.1**: a text interface and retouching without analysing again.
+  - `auto-cdlc.bat` opens an interface in the style of Midnight Commander with three tabs: processed
+    songs (report, retouch, rebuild, open folder, play clicks and A/B), batch (pick songs from `input`,
+    choose the settings and launch it) and settings (`config.txt`).
+  - `--regenerate` changes tone, pick, scroll speed, simplified arrangement or starting difficulty of a
+    processed song in seconds. Each song now saves its analysis in `analisis.json`; songs from earlier
+    versions can only change tone, pick and speed.
+  - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
+    `--start-difficulty`, `--send`.
+  - Tone presets are named in English (`clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz`).
 - **0.5.0**: user-facing names in English, with the old ones still understood.
   - Folders `input`, `output`, `models`, `tools`, `pending_uploads`; `process.bat` and `install.bat`;
     `config.txt` with English keys and values; options `--force`, `--no-questions`, `--no-update`,

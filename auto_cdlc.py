@@ -118,6 +118,8 @@ AFINACIONES = [
 # Índice de púa (contraste agudo ataque/sostenido, dB). Umbral calibrado con canciones conocidas:
 # con púa 'Qué puedo hacer' 10.3 y 'Un buen día' 7.1 (Los Planetas); con dedos 'Me agarraste' 6.3 (Quique González).
 PUA_UMBRAL_DB = 7.0
+TONO_BATCH = None          # --tone for a batch: same tone for every album, nothing asked
+PUA_BATCH = None           # --pick for a batch: "pua" / "dedos" for every album, nothing asked
 PUA_FORZADA = None         # None = detectar; True/False = fijado para el disco en las preguntas
 PUA_MARGEN_DB = 1.0       # a menos de 1 dB del umbral se avisa de que conviene comprobarlo de oído
 SPM = 16                   # semicorcheas por compás (4/4)
@@ -1188,13 +1190,18 @@ def elegir_tono(artista, titulo, pua, bajo_wav):
     return tono, origen
 
 
+NOMBRE_PRESET = {"limpio": "clean", "limpio_pua": "clean_pick", "saturado": "overdrive", "distorsion": "distortion",
+                 "fuzz": "fuzz"}   # the names used in config.txt since 0.5
+
+
 def _resolver_tono(modo, artista, titulo, pua):
     """Tone object for the project and where it comes from, for a bass_tone value (auto, a preset or an
     official tone name)."""
     tono, origen = None, None
     modo = (modo or "auto").strip()
+    modo = TONO_ALIAS.get(modo.lower(), modo)
     if modo.lower() in TONOS_PRESET:
-        p = TONOS_PRESET[modo.lower()]; tono, origen = p, f"{modo.lower()} ({p['de']})"
+        p = TONOS_PRESET[modo.lower()]; tono, origen = p, f"{NOMBRE_PRESET.get(modo.lower(), modo.lower())} ({p['de']})"
     elif modo.lower() != "auto":
         tono, origen = tono_oficial(nombre=modo)
         if tono is None:
@@ -1203,7 +1210,7 @@ def _resolver_tono(modo, artista, titulo, pua):
         tono, origen = tono_oficial(artista, titulo)
     if tono is None:
         clave = "limpio_pua" if pua else "limpio"
-        tono, origen = TONOS_PRESET[clave], f"{clave} ({TONOS_PRESET[clave]['de']})"
+        tono, origen = TONOS_PRESET[clave], f"{NOMBRE_PRESET[clave]} ({TONOS_PRESET[clave]['de']})"
     if IDIOMA == "en":
         origen = origen.replace("tono limpio de DLC Builder", "DLC Builder's clean tone")
     gear = {k: v for k, v in tono["GearList"].items() if v}
@@ -2407,6 +2414,24 @@ def escribir_config(valores, idioma):
     CONFIG.write_text(texto.replace("\r\n", "\n").replace("\n", "\r\n"), encoding="utf-8")
 
 
+def entorno_basico():
+    """Settings needed outside a batch (the interface, --regenerate): language, psarc folder, Wwise and
+    whether .psarc files can be built. Migrates an old install first. Returns the configuration."""
+    global IDIOMA, CARPETA_PSARC, WWISE, COMPILAR, SIN_INTERNET
+    IDIOMA = "en" if leer_configuracion().get("language", "es").strip().lower()[:2] == "en" else "es"
+    migrar_instalacion()
+    conf = leer_configuracion()
+    IDIOMA = "en" if conf.get("language", "es").strip().lower()[:2] == "en" else "es"
+    no = ("no", "false", "0", "off")
+    CARPETA_PSARC = Path(conf.get("psarc_folder") or (AQUI / "psarc"))
+    WWISE = buscar_wwise(conf.get("wwise"))
+    SIN_INTERNET = conf.get("online", "yes").strip().lower() in no
+    COMPILAR = conf.get("build_psarc", "yes").strip().lower() not in no and ruta_cdlc_pack().exists()
+    if COMPILAR:
+        CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
+    return conf
+
+
 def poner_clave(clave, valor):
     """Sets 'clave = valor' in config.txt (replacing the line if the key is there, appending it if not)."""
     texto = CONFIG.read_text(encoding="utf-8-sig")
@@ -2867,21 +2892,21 @@ def planificar(archivos, salida, forzar, preguntar):
         guardados = json.loads(ruta_aj.read_text(encoding="utf-8"))
     except Exception:
         guardados = {}
-    log(T("\nSonido del bajo de cada disco: auto, limpio, limpio_pua, saturado, distorsion, fuzz "
-          "o el nombre de un tono oficial.  Púa: auto (detectar), pua o dedos.",
-          "\nBass tone for each album: auto, limpio (clean), limpio_pua (bright clean), saturado (overdrive), "
-          "distorsion, fuzz or an official tone name.  Pick: auto (detect), pick or fingers."))
+    log(T("\nSonido del bajo de cada disco: auto, clean (limpio), clean_pick (limpio con púa), overdrive (saturado), "
+          "distortion, fuzz o el nombre de un tono oficial.  Púa: auto (detectar), pua o dedos.",
+          "\nBass tone for each album: auto, clean, clean_pick, overdrive, distortion, fuzz or an official "
+          "tone name.  Pick: auto (detect), pick or fingers."))
     ajustes = {}
     for art, alb in orden:
         clave = f"{art} ||| {alb}"
         previo = guardados.get(clave, {})
         log(f"\n  {art} > {alb}" + (T("  (ajustes recordados de la última vez)", "  (settings remembered from last time)") if previo else ""))
-        tono = preguntar(T("    tono_bajo", "    bass tone"), previo.get("tono", TONO_MODO), tono_valido)
+        tono = TONO_BATCH or preguntar(T("    tono_bajo", "    bass tone"), previo.get("tono", TONO_MODO), tono_valido)
         alias_pua = {"auto": "auto", "pua": "pua", "pick": "pua", "dedos": "dedos", "fingers": "dedos", "finger": "dedos"}
         defecto_pua = previo.get("pua", "auto")
         if IDIOMA == "en":
             defecto_pua = {"pua": "pick", "dedos": "fingers"}.get(defecto_pua, defecto_pua)
-        pua = preguntar(T("    púa", "    pick"), defecto_pua, lambda x: a_ascii(x).lower() in alias_pua)
+        pua = PUA_BATCH or preguntar(T("    púa", "    pick"), defecto_pua, lambda x: a_ascii(x).lower() in alias_pua)
         ajustes[(art, alb)] = {"tono": alias_tono(tono), "pua": alias_pua[a_ascii(pua).lower()]}
         guardados[clave] = ajustes[(art, alb)]
     try:
@@ -3197,15 +3222,16 @@ def main():
                          ".rs2dlc project: pass their folders in 'output' or their .rs2dlc files")
     ap.add_argument("--no-questions", "--sin-preguntas", dest="sin_preguntas", action="store_true",
                     help="ask nothing: use config.txt (and what was remembered for each album)")
-    g = ap.add_argument_group("changing processed songs (with --regenerate)")
-    g.add_argument("--regenerate", dest="regenerar", action="store_true",
-                   help="rewrite processed songs with other settings and rebuild their .psarc, without analysing "
-                        "the audio again: pass their folders in 'output'")
+    ap.add_argument("--regenerate", dest="regenerar", action="store_true",
+                    help="rewrite processed songs with the settings below and rebuild their .psarc, without "
+                         "analysing the audio again: pass their folders in 'output'")
+    g = ap.add_argument_group("settings for this run (override config.txt; with --regenerate, what to change)")
     g.add_argument("--tone", help="bass tone: auto, clean, clean_pick, overdrive, distortion, fuzz or an official tone")
     g.add_argument("--pick", choices=["yes", "no"], help="played with a pick or with fingers")
     g.add_argument("--scroll", type=float, metavar="SPEED", help="scroll speed (0.5-5)")
     g.add_argument("--simple", choices=["no", "bar", "half", "beat", "eighth"], help="simplified arrangement")
     g.add_argument("--start-difficulty", type=float, metavar="PCT", help="starting difficulty in %%")
+    g.add_argument("--send", choices=["yes", "no"], help="send the anonymous results of this batch")
     ap.add_argument("--setup", metavar="LANG", help=argparse.SUPPRESS)   # used by install.bat
     a = ap.parse_args()
     if a.setup is not None:
@@ -3252,6 +3278,20 @@ def main():
     except ValueError:
         log(T("Aviso: cents_threshold o start_difficulty no es un número en config.txt; uso los valores por defecto",
               "Warning: cents_threshold or start_difficulty is not a number in config.txt; using the defaults"))
+    global TONO_BATCH, PUA_BATCH
+    if not a.regenerar:            # with --regenerate these flags say what to change, not defaults
+        if a.start_difficulty is not None:
+            DD_INICIAL = min(95.0, max(0.0, a.start_difficulty))
+        if a.simple is not None:
+            ARREGLO_SIMPLE = {"no": None, "bar": 0, "half": 1, "beat": 2, "eighth": 3}[a.simple]
+        if a.scroll is not None:
+            VELOCIDAD_SCROLL, VELOCIDAD_AUTO = min(5.0, max(0.5, a.scroll)), False
+        if a.tone:
+            TONO_BATCH = alias_tono(a.tone)
+        if a.pick:
+            PUA_BATCH = "pua" if a.pick == "yes" else "dedos"
+        if a.send:
+            CONF_ENVIO = "si" if a.send == "yes" else "no"
     CARPETA_PSARC = Path(a.psarc or conf.get("psarc_folder") or (AQUI / "psarc"))
     configurado = a.wwise or conf.get("wwise") or None
     WWISE = buscar_wwise(configurado)

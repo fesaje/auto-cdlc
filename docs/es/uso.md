@@ -187,6 +187,44 @@ Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan ant
 - La dificultad dinámica sube sola según aciertas. Para tocarla entera desde el principio: **Riff
   Repeater** → selecciona toda la canción → *Set Difficulty* al 100 %.
 
+## La interfaz (`auto-cdlc.bat`)
+
+Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Commander: ejecuta
+**`auto-cdlc.bat`**. Se maneja con ratón o teclado y tiene tres pestañas:
+
+- **Canciones**: todas las procesadas, con fiabilidad, BPM, afinación, tono, púa, velocidad de scroll y
+  arreglo. Al seleccionar una ves su informe. Teclas: **e** retocar (tono, púa, velocidad… ver abajo),
+  **b** volver a compilar el `.psarc`, **o** abrir su carpeta, **c** oír los clics, **a** oír el A/B,
+  **r** recargar.
+- **Tanda**: las canciones de `input` (marcadas las ya procesadas). Marca las que quieras, elige dificultad
+  inicial, arreglo simplificado, tono, púa y si envías resultados, y pulsa **Empezar**. El progreso sale
+  debajo. Es lo mismo que `process.bat`, sin las preguntas.
+- **Ajustes**: todas las opciones de `config.txt` con una explicación corta. **Guardar** las escribe en el
+  archivo.
+
+`process.bat` sigue funcionando como siempre y es el que busca actualizaciones.
+
+## Retocar una canción sin volver a analizarla
+
+Tono, púa, velocidad de scroll, arreglo simplificado y dificultad inicial se pueden cambiar después en unos
+segundos, sin volver a analizar el audio. Desde la interfaz (**e** sobre la canción) o desde la línea de
+comandos:
+
+```
+process.bat --regenerate "output\Artista - Título" --tone fuzz --pick yes --scroll 1.6
+```
+
+Opciones: `--tone` (`auto`, `clean`, `clean_pick`, `overdrive`, `distortion`, `fuzz` o el nombre de un tono
+oficial), `--pick yes|no`, `--scroll` (0,5–5), `--simple no|bar|half|beat|eighth` y `--start-difficulty`
+(%). Lo que no pases se queda como está. Reescribe los XML y el proyecto de DLC Builder y vuelve a compilar
+el `.psarc`; el cambio queda apuntado al final de `informe.txt`.
+
+Las canciones procesadas antes de la 0.5.1 no tienen el análisis guardado (`analisis.json`), así que en
+ellas solo se pueden cambiar tono, púa y velocidad.
+
+Las mismas opciones sin `--regenerate` valen para toda una tanda y se saltan esas preguntas:
+`process.bat --tone overdrive --pick no --simple bar`. También `--send yes|no`.
+
 ## Compilar o retocar a mano
 
 - **DLC Builder**: abre el `.rs2dlc` (*Project → Open Project…*) y pulsa *Build*. Sirve si el `.psarc` no

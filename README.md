@@ -65,6 +65,10 @@ Each song gets its own folder in `output` with everything used to build it:
 - **`.gp5`**, **`.svl`**, the arrangement **XMLs** and a **DLC Builder project**: open them in Guitar Pro,
   TuxGuitar, Editor on Fire or DLC Builder and fix what you need.
 
+To change tone, pick or scroll speed in seconds, or to browse your songs and launch batches, run
+**`auto-cdlc.bat`**: a text interface with songs, batch and settings tabs
+([details](docs/en/usage.md#the-interface-auto-cdlcbat)).
+
 After editing, rebuild the `.psarc` without analysing the audio again:
 
 ```

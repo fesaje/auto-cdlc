@@ -66,6 +66,10 @@ Cada canción tiene su carpeta en `output` con todo lo que se usó para crearla:
 - **`.gp5`**, **`.svl`**, los **XML** de los arreglos y un **proyecto de DLC Builder**: ábrelos en Guitar
   Pro, TuxGuitar, Editor on Fire o DLC Builder y corrige lo que haga falta.
 
+Para cambiar tono, púa o velocidad de scroll en segundos, o para ver tus canciones y lanzar tandas,
+ejecuta **`auto-cdlc.bat`**: una interfaz de texto con pestañas de canciones, tanda y ajustes
+([detalles](docs/es/uso.md#la-interfaz-auto-cdlcbat)).
+
 Después de retocar, vuelve a crear el `.psarc` sin analizar otra vez el audio:
 
 ```
