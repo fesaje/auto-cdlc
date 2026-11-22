@@ -29,8 +29,8 @@ Unattended batches don't update. Turn it off with `buscar_actualizaciones = no` 
    how many are done and how many are left.
 2. **Groups by artist > album**, using the mp3 tags (album artist and album). If a song has no album, it
    looks it up online by artist and title. If that fails too, it goes under "(sin disco)".
-3. **Songs that failed before**: if any songs gave an error in earlier batches (for example, interludes
-   with no bass), it lists them and asks whether to retry. The default is no. Songs you don't retry are
+3. **Songs that failed before**: if any songs gave an error in earlier batches, it lists them and asks
+   whether to retry. Songs with no bass (interludes, intros) are skipped without asking. The default is no. Songs you don't retry are
    left out of the batch and nothing is asked about them.
 4. **Batch questions**: starting difficulty, simplified arrangement and whether you want to **send the
    results** to help improve auto-cdlc (see below).
@@ -43,7 +43,9 @@ whatever you chose last time for that album (saved in `salida\ajustes_discos.jso
 If nobody answers within 60 seconds (`espera_preguntas`), the defaults are used for everything and the
 batch starts on its own, so you can launch it and walk away. With `--sin-preguntas` nothing is asked.
 
-Each song takes about 4–5 minutes, depending on the computer.
+Each song takes about 3–4 minutes, depending on the computer. At the end, the summary lists the songs worth
+checking (low reliability), the ones left without `.psarc` and the ones with no bass, and offers to move the
+batch's files out of `entrada` (to `entrada\procesadas` and `entrada\descartadas`).
 
 ### Output
 

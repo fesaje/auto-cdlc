@@ -55,6 +55,8 @@ Step by step in **[docs/en/installation.md](docs/en/installation.md)**.
 
 - **[Installation](docs/en/installation.md)**: requirements, Wwise, CDLC Enabler, installer and first
   test.
+- **[FAQ](docs/en/faq.md)**: quick answers: how to use it, checking a song, editing and rebuilding by
+  hand, common problems.
 - **[Usage](docs/en/usage.md)**: processing songs, the questions asked for each batch, the output, every
   option in `configuracion.txt`, checking the result and playing it in Rocksmith.
 - **[How it works](docs/en/how-it-works.md)**: the pipeline in detail, for the curious and for

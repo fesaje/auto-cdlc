@@ -27,8 +27,8 @@ Si la tanda va desatendida, no se actualiza. Se desactiva con `buscar_actualizac
    cuántas faltan.
 2. **Agrupa por artista > disco**, con las etiquetas del mp3 (artista del disco y álbum). Si una canción
    no trae disco, lo busca en internet por artista y título. Si tampoco aparece, va a "(sin disco)".
-3. **Fallidas de tandas anteriores**: si hay canciones que dieron error (por ejemplo, interludios sin
-   bajo), las enseña y pregunta si reintentarlas. Por defecto no. Las que no se reintentan salen de la
+3. **Fallidas de tandas anteriores**: si hay canciones que dieron error, las enseña y pregunta si
+   reintentarlas. Las que no tenían bajo (interludios, intros) se saltan sin preguntar. Por defecto no. Las que no se reintentan salen de la
    tanda y no se pregunta nada sobre ellas.
 4. **Preguntas de la tanda**: dificultad inicial, arreglo simplificado y si quieres **enviar los
    resultados** para ayudar a mejorar auto-cdlc (ver más abajo).
@@ -41,7 +41,9 @@ elegiste la última vez para ese disco (se guarda en `salida\ajustes_discos.json
 Si nadie contesta en 60 segundos (`espera_preguntas`), se usan los valores por defecto en todo y la tanda
 arranca sola: puedes lanzarla y marcharte. Con `--sin-preguntas` no pregunta nada.
 
-Cada canción tarda unos 4–5 minutos, según el ordenador.
+Cada canción tarda unos 3-4 minutos, según el ordenador. Al final, el resumen lista las canciones que
+conviene revisar (fiabilidad baja), las que se quedaron sin `.psarc` y las que no tenían bajo, y ofrece sacar
+los archivos de la tanda de `entrada` (a `entrada\procesadas` y `entrada\descartadas`).
 
 ### Qué sale
 

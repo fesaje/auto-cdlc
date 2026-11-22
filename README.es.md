@@ -54,6 +54,8 @@ Paso a paso en **[docs/es/instalacion.md](docs/es/instalacion.md)**.
 ## Documentación
 
 - **[Instalación](docs/es/instalacion.md)**: requisitos, Wwise, CDLC Enabler, instalador y primera prueba.
+- **[Preguntas frecuentes](docs/es/preguntas-frecuentes.md)**: respuestas rápidas: cómo usarlo, revisar una
+  canción, retocar y reempaquetar a mano, problemas habituales.
 - **[Uso](docs/es/uso.md)**: cómo procesar canciones, las preguntas de cada tanda, qué sale, todas las
   opciones de `configuracion.txt`, cómo revisar el resultado y cómo tocarlo en Rocksmith.
 - **[Cómo funciona](docs/es/funcionamiento.md)**: el proceso por dentro, para curiosos y para quien quiera
