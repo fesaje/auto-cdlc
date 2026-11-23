@@ -94,6 +94,17 @@ Almost always Wwise. The final summary lists songs "without .psarc" with the rea
 2021, 2022 or 2023; if it's on another drive, put its folder in `wwise` in `config.txt`. Then run
 those songs again with `--force`, or use `--rebuild`.
 
+### Two versions of the same song (studio and live)
+
+Rocksmith tells songs apart by artist and title. Since 0.5.1, if you process a song whose artist and title
+are already in `output` but from a different mp3, the album is added to its title: *Song (Live at X)*.
+Both show up in the game and neither file overwrites the other. The album comes from the mp3 tags, the
+"Artist - Album - NN - Title" file name, or the folder the mp3 is in.
+
+Songs processed with earlier versions could share an internal key, so the game only showed one of them.
+At the start of each batch you get a list of those; regenerate one of each pair (key **e** in
+`auto-cdlc.bat`, or `process.bat --regenerate "output\<folder>"`) and copy its new `.psarc`.
+
 ### The update failed
 Usually a network hiccup: run `process.bat` again. Your installation is untouched until an update
 completes.

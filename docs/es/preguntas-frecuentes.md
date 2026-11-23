@@ -95,6 +95,17 @@ Casi siempre es Wwise. El resumen final lista las canciones "sin .psarc" con el 
 2021, 2022 o 2023; si está en otra unidad, pon su carpeta en `wwise` en `config.txt`. Luego repite
 esas canciones con `--force` o usa `--rebuild`.
 
+### Dos versiones de la misma canción (estudio y directo)
+
+Rocksmith distingue las canciones por artista y título. Desde la 0.5.1, si procesas una canción cuyo artista
+y título ya están en `output` pero de otro mp3, se le añade el álbum al título: *Canción (Directo en X)*.
+Las dos aparecen en el juego y ningún archivo pisa al otro. El álbum sale de las etiquetas del mp3, del nombre
+"Artista - Álbum - NN - Título" o de la carpeta donde está el mp3.
+
+Las canciones procesadas con versiones anteriores podían compartir una clave interna, y el juego solo
+mostraba una. Al empezar cada tanda sale la lista de esas; regenera una de cada pareja (tecla **e** en
+`auto-cdlc.bat`, o `process.bat --regenerate "output\<carpeta>"`) y copia su `.psarc` nuevo.
+
 ### Ha fallado la actualización
 Suele ser un fallo puntual de red: vuelve a ejecutar `process.bat`. Tu instalación no se toca hasta que
 una actualización termina bien.

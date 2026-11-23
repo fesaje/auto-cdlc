@@ -274,19 +274,89 @@ def nombre_carpeta(artista, titulo):
 _INDICES = {}
 
 
+def _huella(ruta):
+    """Identifies an input file: name and size. Two different recordings named the same ('01 - Song.mp3' in a
+    studio album and in a live one) have different sizes."""
+    try:
+        return f"{ruta.name}|{ruta.stat().st_size}"
+    except OSError:
+        return ruta.name
+
+
+def _misma_entrada(diag, ruta):
+    """True if the song in this diagnostico.json came from the file 'ruta' (by name and size; songs processed
+    before 0.5.1 stored the size in KB under 'entrada')."""
+    if diag.get("archivo") != ruta.name:
+        return False
+    if "huella" in diag:
+        return diag["huella"] == _huella(ruta)
+    kb = (diag.get("entrada") or {}).get("tamaño_kb")
+    try:
+        return kb is None or abs(kb - ruta.stat().st_size / 1024) < 1
+    except OSError:
+        return True
+
+
 def _indice_salida(salida):
-    """{archivo de entrada: carpeta} de lo ya procesado en 'output' (se lee una vez por ejecución)."""
+    """{input file: folder} of what's already processed in 'output' (read once per run). Keys are the
+    file's fingerprint (name|size) and, for songs from before 0.5.1, just its name."""
     import json
     clave = str(Path(salida).resolve())
     if clave not in _INDICES:
         idx = {}
         for diag in Path(salida).glob("*/diagnostico.json"):
             try:
-                idx.setdefault(json.loads(diag.read_text(encoding="utf-8")).get("archivo"), diag.parent)
+                d = json.loads(diag.read_text(encoding="utf-8"))
+                idx.setdefault(d.get("huella") or d.get("archivo"), diag.parent)
             except Exception:
                 pass
         _INDICES[clave] = idx
     return _INDICES[clave]
+
+
+def _album_de(ruta, et):
+    """Album of an input file: its tag, else the 'Artist - Album - NN - Title' file name, else its folder."""
+    album = (et or {}).get("album") or partes_nombre(ruta.stem)[1]
+    if not album and ruta.parent.name.lower() not in ("input", "entrada", "processed", "procesadas", "real"):
+        album = ruta.parent.name
+    return re.sub(r"\s+", " ", album or "").strip()
+
+
+_PROCESADAS = {}
+
+
+def _procesadas(salida):
+    """Artist, title and input file of every song in 'output' (cached; procesar() clears it)."""
+    import json
+    clave = str(Path(salida).resolve())
+    if clave not in _PROCESADAS:
+        lista = []
+        for diag in Path(salida).glob("*/diagnostico.json"):
+            try:
+                d = json.loads(diag.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            lista.append({k: d.get(k) for k in ("artista", "titulo", "titulo_original", "archivo", "huella", "entrada")
+                          if k in d})
+        _PROCESADAS[clave] = lista
+    return _PROCESADAS[clave]
+
+
+def titulo_sin_choque(salida, ruta, artista, titulo, et):
+    """Rocksmith tells songs apart by artist and title, so two recordings of the same song (studio and live,
+    or a re-recording) would step on each other in the game. If another song already processed has the same
+    artist and title, this one gets its album added: 'Song (Live at X)'. The first one keeps its title."""
+    clave = (_normalizar(artista), _normalizar(titulo))
+    for d in _procesadas(salida):
+        if (_normalizar(d.get("artista")), _normalizar(d.get("titulo_original") or d.get("titulo"))) != clave:
+            continue
+        if _misma_entrada(d, ruta):
+            return d.get("titulo") or titulo      # this very file, processed before: keep what it got then
+        album = _album_de(ruta, et)
+        if album and _normalizar(album) not in _normalizar(titulo):
+            return f"{titulo} ({album})"
+        return f"{titulo} (2)"
+    return titulo
 
 
 def destino(ruta, salida):
@@ -294,17 +364,33 @@ def destino(ruta, salida):
     esa para no repetir el trabajo; si otra canción distinta ocupa el nombre, se añade ' (2)', ' (3)'..."""
     import json
     artista, titulo, fuente, et = metadatos(ruta)
+    titulo = titulo_sin_choque(salida, ruta, artista, titulo, et)
+    def es_suya(d):
+        """Folder 'd' holds this file's song (or a song too old to have stored which file it came from)."""
+        diag = d / "diagnostico.json"
+        try:
+            return not diag.exists() or _misma_entrada(json.loads(diag.read_text(encoding="utf-8")), ruta)
+        except Exception:
+            return True
+
     antiguo = salida / ruta.stem
-    if (antiguo / f"{ruta.stem}.gp5").exists():
+    if (antiguo / f"{ruta.stem}.gp5").exists() and es_suya(antiguo):
         return ruta.stem, antiguo, artista, titulo, fuente, et
     base = nombre_carpeta(artista, titulo)
     # nombre con la regla de la 0.2.1.1 ('?' y ':' cambiados por '-'): si ya existe, se reutiliza
     viejo = re.sub(r"\s+", " ", re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", f"{artista} - {titulo}")).strip().rstrip(". ")[:120].rstrip(". ")
-    if viejo != base and (salida / viejo / f"{viejo}.gp5").exists():
+    if viejo != base and (salida / viejo / f"{viejo}.gp5").exists() and es_suya(salida / viejo):
         return viejo, salida / viejo, artista, titulo, fuente, et
     # procesada antes con otro nombre (p. ej. si cambió cómo se lee el título del archivo): se reconoce
     # por el nombre del mp3 guardado en su diagnostico.json
-    previa = _indice_salida(salida).get(ruta.name)
+    idx = _indice_salida(salida)
+    previa = idx.get(_huella(ruta))
+    if previa is None and ruta.name in idx:      # processed before 0.5.1: only the name was stored
+        try:
+            d = json.loads((idx[ruta.name] / "diagnostico.json").read_text(encoding="utf-8"))
+            previa = idx[ruta.name] if _misma_entrada(d, ruta) else None
+        except Exception:
+            previa = None
     if previa and (previa / f"{previa.name}.gp5").exists():
         return previa.name, previa, artista, titulo, fuente, et
     for k in range(1, 50):
@@ -312,7 +398,7 @@ def destino(ruta, salida):
         d = salida / nombre
         diag = d / "diagnostico.json"
         try:
-            ocupada = diag.exists() and json.loads(diag.read_text(encoding="utf-8")).get("archivo") != ruta.name
+            ocupada = diag.exists() and not _misma_entrada(json.loads(diag.read_text(encoding="utf-8")), ruta)
         except Exception:
             ocupada = False
         if not ocupada:
@@ -1830,12 +1916,93 @@ def tab_simplificada(tab, compases, completo, nivel_max):
     return out
 
 
+def _clave_nueva(meta):
+    """'cb' + 5 letters of the artist + 5 of the title + a 6-character hash of artist, album and title.
+    Before 0.5.1 there was no hash, so 'Song' and 'Song (Live)', or any two titles starting with the same
+    five letters, got the same key and the game took them for the same song."""
+    import zlib
+    base = "cb" + StringValidator_dlckey(a_ascii(meta["artista"]))[:5] + StringValidator_dlckey(a_ascii(meta["titulo"]))[:5]
+    h = zlib.crc32(f"{meta['artista']}|{meta.get('album', '')}|{meta['titulo']}".lower().encode())
+    sufijo = ""
+    for _ in range(6):
+        h, r = divmod(h, 36)
+        sufijo += "0123456789abcdefghijklmnopqrstuvwxyz"[r]
+    return base + sufijo
+
+
+def clave_dlc(ruta, meta):
+    """The song's DLC key. A song that already has one keeps it (the game keys its scores and stats by it),
+    unless another processed song has the same key: then it gets a new one."""
+    import json
+    ruta = Path(ruta)
+    vieja = None
+    if ruta.exists():
+        try:
+            vieja = json.loads(ruta.read_text(encoding="utf-8")).get("DLCKey")
+        except Exception:
+            vieja = None
+    if not vieja:
+        return _clave_nueva(meta)
+    for otro in ruta.parent.parent.glob("*/*.rs2dlc"):
+        if otro.parent == ruta.parent:
+            continue
+        try:
+            if json.loads(otro.read_text(encoding="utf-8")).get("DLCKey") == vieja:
+                log(T(f"  La clave {vieja} la comparte con {otro.parent.name}: le doy una nueva. Borra su .psarc\n"
+                      f"  anterior de la carpeta dlc si lo tenías, o se verán las dos.",
+                      f"  Key {vieja} is shared with {otro.parent.name}: giving it a new one. Delete its old\n"
+                      f"  .psarc from the dlc folder if you had it, or both will show up."))
+                return _clave_nueva(meta)
+        except Exception:
+            pass
+    return vieja
+
+
+def _ids(semilla_txt):
+    import uuid, zlib
+    s = zlib.crc32(semilla_txt.encode())
+    return int(s % 2_000_000_000) + 1, str(uuid.UUID(int=(s << 96) | (s << 32) | 0xC0FFEE))
+
+
+def poner_ids(proyecto, clave):
+    """Sets the project's DLC key and derives the arrangements' IDs from it, as escribir_proyecto does."""
+    proyecto["DLCKey"] = clave
+    for a in proyecto.get("Arrangements", []):
+        f = a["Fields"][0]
+        semilla = clave + ("letra" if a["Case"] == "Vocals" else "simple" if f.get("Priority") == 1 else "")
+        f["MasterID"], f["PersistentID"] = _ids(semilla)
+
+
+def claves_repetidas(salida):
+    """Groups of processed songs that share a DLC key (possible before 0.5.1): the game shows only one."""
+    import json
+    por_clave = {}
+    for p in Path(salida).glob("*/*.rs2dlc"):
+        try:
+            por_clave.setdefault(json.loads(p.read_text(encoding="utf-8")).get("DLCKey"), []).append(p.parent)
+        except Exception:
+            pass
+    return [sorted(v) for k, v in por_clave.items() if k and len(v) > 1]
+
+
+def avisar_claves_repetidas(salida):
+    grupos = claves_repetidas(salida)
+    if not grupos:
+        return
+    log(T("\nEstas canciones tienen la misma clave y en el juego solo se ve una de cada grupo:",
+          "\nThese songs share the same key, so the game shows only one of each group:"))
+    for g in grupos:
+        log("  - " + " | ".join(d.name for d in g))
+    log(T("  Para arreglarlo, regenera una de cada grupo (le doy una clave nueva) y copia su .psarc nuevo:\n"
+          "    process.bat --regenerate \"output\\<carpeta>\"   (o la tecla e en auto-cdlc.bat)",
+          "  To fix it, regenerate one of each group (it gets a new key) and copy its new .psarc:\n"
+          "    process.bat --regenerate \"output\\<folder>\"   (or key e in auto-cdlc.bat)"))
+
+
 def escribir_proyecto(ruta, meta, xml, ogg, preview, inicio_preview, portada, cuerdas, cents, pua, tono=None,
                       xml_simple=None, xml_letra=None, velocidad=None):
     import json, uuid, zlib
-    clave = "cb" + (StringValidator_dlckey(a_ascii(meta["artista"]))[:5] + StringValidator_dlckey(a_ascii(meta["titulo"]))[:5])
-    if len(clave) < 5:
-        clave += "xxxxx"[:5 - len(clave)]
+    clave = clave_dlc(ruta, meta)
     semilla = zlib.crc32(clave.encode())
     offsets = [c - base for c, base in zip(cuerdas, [28, 33, 38, 43])] + [0, 0]
     proyecto = {
@@ -2002,7 +2169,8 @@ def procesar(ruta, salida, forzar):
     log(f"  {artista} - {titulo}  ({T('de', 'from')} {fuente_txt(fuente)})")
     t_ini = time.time()
     DIAG.clear()
-    DIAG.update({"version": VERSION, "archivo": ruta.name, "artista": artista, "titulo": titulo,
+    DIAG.update({"version": VERSION, "archivo": ruta.name, "huella": _huella(ruta), "artista": artista,
+                 "titulo": titulo, "titulo_original": metadatos(ruta)[1],
                  "metadatos": {"fuente": fuente, "carpeta": nombre, "etiquetas": etiquetas},
                  "fecha": time.strftime("%Y-%m-%d %H:%M"), "tiempos_s": {}})
     reloj = [time.time()]
@@ -2321,6 +2489,7 @@ def procesar(ruta, salida, forzar):
     DIAG["fiabilidad"] = {"nivel": ("alta", "media", "baja")[min(2, len(motivos))], "motivos": motivos}
     import json
     (dest / "diagnostico.json").write_text(json.dumps(DIAG, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    _PROCESADAS.clear()
     aviso = T("  ¡OJO! tiempo 1 dudoso, revisa con el archivo de clics",
               "  CAREFUL! doubtful downbeat, check it with the clicks file") if conf < 0.6 else ""
     extra = f" | {afin_txt(afin_nombre)}" + (T(" | compás 3/4", " | 3/4 time") if metro == 3 else "") + \
@@ -2678,11 +2847,40 @@ def buscar_wwise(configurado=None):
     return None
 
 
+def _sufijo_psarc(proyecto):
+    """cdlc-pack names the .psarc 'Artist_Title_v1_p.psarc'. Two processed songs with the same artist and
+    title (from before 0.5.1, when the album wasn't added to repeated titles) would overwrite each other's
+    file, so the one with a new-style key gets it in the name: 'Artist_Title_v1_k3x9qa_p.psarc'."""
+    import json
+    try:
+        pr = json.loads(Path(proyecto).read_text(encoding="utf-8"))
+        clave, art, tit = pr["DLCKey"], pr["ArtistName"]["Value"], pr["Title"]["Value"]
+    except Exception:
+        return ""
+    vieja = "cb" + StringValidator_dlckey(a_ascii(art))[:5] + StringValidator_dlckey(a_ascii(tit))[:5]
+    if clave == vieja or len(clave) <= len(vieja):
+        return ""
+    yo = (_normalizar(art), _normalizar(tit))
+    for otro in Path(proyecto).parent.parent.glob("*/*.rs2dlc"):
+        if otro.parent == Path(proyecto).parent:
+            continue
+        try:
+            o = json.loads(otro.read_text(encoding="utf-8"))
+            if (_normalizar(o["ArtistName"]["Value"]), _normalizar(o["Title"]["Value"])) == yo:
+                return "_" + clave[-6:]
+        except Exception:
+            pass
+    return ""
+
+
 def compilar_psarc(proyecto, carpeta, wwise=None):
     """Converts the audio with Wwise, generates the DD and packs the song. Returns (psarc_paths, error)."""
+    import tempfile
     exe = ruta_cdlc_pack()
     if not exe.exists():
         return [], T(f"no encuentro {exe}", f"{exe} not found")
+    sufijo = _sufijo_psarc(proyecto)
+    destino_final, carpeta = Path(carpeta), (Path(tempfile.mkdtemp(prefix="auto-cdlc-psarc-")) if sufijo else carpeta)
     args = [str(exe), str(proyecto), "--salida", str(carpeta)]
     if wwise:
         args += ["--wwise", wwise]
@@ -2691,6 +2889,17 @@ def compilar_psarc(proyecto, carpeta, wwise=None):
     t0 = time.time()
     r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
     rutas = [l.split("PSARC:", 1)[1].strip() for l in r.stdout.splitlines() if l.startswith("PSARC:")]
+    if sufijo:      # built apart so it can't overwrite the other song's file; moved in under its own name
+        movidas = []
+        for x in rutas:
+            x = Path(x)
+            if x.exists():
+                base, _, plataforma = x.stem.rpartition("_")
+                nuevo = destino_final / f"{base}{sufijo}_{plataforma}{x.suffix}"
+                shutil.move(str(x), str(nuevo))
+                movidas.append(str(nuevo))
+        rutas = movidas
+        shutil.rmtree(carpeta, ignore_errors=True)
     DIAG["psarc"] = {"codigo_salida": r.returncode, "segundos": round(time.time() - t0, 1),
                      "salida": r.stdout.strip().splitlines()[-15:], "errores": r.stderr.strip().splitlines()[-15:],
                      "tamaño_kb": [round(Path(x).stat().st_size / 1024) for x in rutas if Path(x).exists()]}
@@ -2924,6 +3133,7 @@ def planificar(archivos, salida, forzar, preguntar):
     seg_cancion, fallidas, sin_bajo = historial(salida)
     sin = [] if forzar else [r for r in pendientes if r.name in sin_bajo]
     pendientes = [r for r in pendientes if r not in sin]
+    avisar_claves_repetidas(salida)
     log(T(f"\nEn la entrada hay {len(archivos)} canciones: {hechas} ya procesadas, {len(pendientes)} pendientes.",
           f"\nThe input has {len(archivos)} songs: {hechas} already processed, {len(pendientes)} pending."))
     if sin:
@@ -3703,6 +3913,10 @@ def regenerar(carpeta, tono=None, pua=None, velocidad=None, simple="igual", dd_i
                 if x.exists():
                     t = x.read_text(encoding="utf-8")
                     x.write_text(_re.sub(r'bassPick="\d"', f'bassPick="{int(pua)}"', t), encoding="utf-8")
+        clave = clave_dlc(info["proyecto"], {"album": (proyecto.get("AlbumName") or {}).get("Value", ""), **meta})
+        if clave != proyecto.get("DLCKey"):
+            poner_ids(proyecto, clave)
+            cambios.append(T(f"clave nueva {clave}", f"new key {clave}"))
         info["proyecto"].write_text(json.dumps(proyecto, ensure_ascii=False, indent=2), encoding="utf-8")
         if an is not None:
             if velocidad is not None:

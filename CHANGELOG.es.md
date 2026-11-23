@@ -20,6 +20,10 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     discos locales) y deja elegir a qué carpeta dlc van los .psarc, o Intro para la carpeta psarc de
     auto-cdlc. Se hace al instalar, con **Buscar Rocksmith…** en los ajustes de la interfaz o con
     `process.bat --find-rocksmith`.
+  - Dos grabaciones de la misma canción (estudio y directo, una regrabación) ya no se pisan: la segunda
+    lleva el álbum en el título, la clave del DLC incluye un resumen de artista, álbum y título, y un mp3
+    se da por procesado por su nombre y tamaño, no solo por el nombre. Las canciones de versiones
+    anteriores que comparten clave salen al empezar cada tanda; regenerar una lo arregla.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para

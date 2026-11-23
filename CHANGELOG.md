@@ -19,6 +19,10 @@ files: code, configuration, README and installers.
     drives) and lets you choose which dlc folder gets the .psarc files, or Enter for auto-cdlc's own psarc
     folder. It runs on install, from **Find Rocksmith…** in the interface's settings, or with
     `process.bat --find-rocksmith`.
+  - Two recordings of the same song (studio and live, a re-recording) no longer step on each other: the
+    second gets its album added to the title, the DLC key now includes a hash of artist, album and title,
+    and an mp3 is recognised as already processed by its name and size, not just its name. Songs from
+    earlier versions that share a key are listed at the start of each batch; regenerating one fixes it.
   - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - New `separation_model` option: `demucs` as an alternative to the default bass separator, for songs
