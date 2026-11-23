@@ -7,13 +7,12 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
-- **0.5.2**: la lista de canciones de la interfaz tiene columnas Artista, Álbum y Canción; pulsa una
-  cabecera para ordenar por ella (otra vez para invertir) y escribe en el filtro (tecla `/`) para ver solo
-  las que coincidan.
 - **0.5.1**: interfaz de texto y retoques sin volver a analizar.
   - `auto-cdlc.bat` abre una interfaz al estilo de Midnight Commander con tres pestañas: canciones
     procesadas (informe, retocar, recompilar, abrir carpeta, oír clics y A/B), tanda (elegir canciones de
-    `input`, ajustes y lanzarla) y ajustes (`config.txt`).
+    `input`, ajustes y lanzarla) y ajustes (`config.txt`). La lista de canciones tiene columnas Artista,
+    Álbum y Canción: pulsa una cabecera para ordenar por ella (otra vez para invertir) y escribe en el
+    filtro (tecla `/`).
   - `--regenerate` cambia tono, púa, velocidad de scroll, arreglo simplificado o dificultad inicial de una
     canción procesada en segundos. Cada canción guarda ahora su análisis en `analisis.json`; las de
     versiones anteriores solo pueden cambiar tono, púa y velocidad.
