@@ -199,7 +199,8 @@ Nunca se envían el audio ni la letra, y las rutas de tu ordenador se quitan ant
 Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Commander: ejecuta
 **`auto-cdlc.bat`**. Se maneja con ratón o teclado y tiene tres pestañas:
 
-- **Canciones**: todas las procesadas, con fiabilidad, BPM, afinación, tono, púa, velocidad de scroll y
+- **Canciones**: todas las procesadas por artista, álbum y título (pulsa una cabecera para ordenar por esa
+  columna, **/** para filtrar), con fiabilidad, BPM, afinación, tono, púa, velocidad de scroll y
   arreglo. Al seleccionar una ves su informe. Teclas: **e** retocar (tono, púa, velocidad… ver abajo),
   **b** volver a compilar el `.psarc`, **o** abrir su carpeta, **c** oír los clics, **a** oír el A/B,
   **r** recargar.

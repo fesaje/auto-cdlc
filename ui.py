@@ -58,9 +58,14 @@ def canciones(salida):
             continue
         d = info["diag"]
         b = d.get("beats", {})
+        pr = info["datos"]
+        campo = lambda k: ((pr.get(k) or {}).get("Value") or "").strip()
         filas.append({
             "carpeta": carpeta, "info": info,
             "nombre": carpeta.name,
+            "artista": campo("ArtistName") or carpeta.name.split(" - ")[0],
+            "album": campo("AlbumName"),
+            "titulo": campo("Title") or carpeta.name.split(" - ", 1)[-1],
             "fiabilidad": (d.get("fiabilidad") or {}).get("nivel"),
             "motivos": (d.get("fiabilidad") or {}).get("motivos") or [],
             "bpm": b.get("tempo_mediano"),
@@ -73,7 +78,46 @@ def canciones(salida):
             "fecha": d.get("fecha") or "",
             "completo": info["completo"],
         })
-    return sorted(filas, key=lambda f: f["fecha"], reverse=True)
+    return filas
+
+
+# Songs table columns: (key, Spanish label, English label). The key is also what the column sorts by.
+COLUMNAS = [("artista", "Artista", "Artist"), ("album", "Álbum", "Album"), ("titulo", "Canción", "Song"),
+            ("fiabilidad", "Fiab.", "Rel."), ("bpm", "BPM", "BPM"), ("metro", "Compás", "Time"),
+            ("afinacion", "Afinación", "Tuning"), ("tono", "Tono", "Tone"), ("pua", "Púa", "Pick"),
+            ("velocidad", "Scroll", "Scroll"), ("simple", "Simpl.", "Simple"), ("fecha", "Fecha", "Date")]
+ANCHO = {"artista": 22, "album": 22, "titulo": 28}   # long names are cut so the other columns stay visible
+ORDEN_FIABILIDAD = {"alta": 0, "media": 1, "baja": 2}
+
+
+def normal(texto):
+    """Lowercase without accents, for sorting and filtering ("Álbum" == "album")."""
+    import unicodedata
+    return unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode().lower().strip()
+
+
+def clave_orden(col):
+    """Sort key for a column: text case- and accent-insensitive, numbers as numbers, blanks last."""
+    def k(f):
+        v = f.get(col)
+        if col == "fiabilidad":
+            v = ORDEN_FIABILIDAD.get(v, 9)
+        elif col == "tono":
+            v = (v or "").split(" (")[0]
+        elif col == "simple":
+            v = -1 if v is None else (v if isinstance(v, int) else 9)
+        if v is None or v == "":
+            return (1, "")
+        if isinstance(v, (int, float, bool)):
+            return (0, float(v))
+        return (0, normal(str(v)))
+    return k
+
+
+def coincide(f, palabras):
+    """True if every word of the filter appears in the song's artist, album, title, tuning or tone."""
+    texto = normal(" ".join(str(f.get(k) or "") for k in ("artista", "album", "titulo", "afinacion", "tono")))
+    return all(p in texto for p in palabras)
 
 
 # ---------------------------------------------------------------- retouch dialog
@@ -182,7 +226,9 @@ class AutoCdlc(App):
     CSS = """
     TabPane > Vertical { height: 1fr; }
     #canciones-panel { height: 1fr; }
-    #tabla { width: 3fr; }
+    #lista { width: 3fr; }
+    #filtro { margin: 0 0 0 0; }
+    #tabla { height: 1fr; }
     #detalle { width: 2fr; border-left: solid $primary; padding: 0 1; }
     #registro, #tanda-log { height: 1fr; border-top: solid $primary; }
     #tanda-opciones { height: auto; }
@@ -205,13 +251,17 @@ class AutoCdlc(App):
         Binding("c", "clics", T("Oír clics", "Play clicks")),
         Binding("a", "ab", T("Oír A/B", "Play A/B")),
         Binding("r", "refrescar", T("Refrescar", "Refresh")),
+        Binding("slash", "filtrar", T("Filtrar", "Filter")),
+        Binding("escape", "quitar_filtro", T("Quitar filtro", "Clear filter"), show=False),
     ]
 
     def __init__(self):
         super().__init__()
         self.conf = CONF
         self.salida = c.AQUI / "output"
-        self.filas = []
+        self.filas = []                  # songs shown, in table order
+        self.todas = []                  # every processed song
+        self.orden = [("artista", False), ("album", False), ("titulo", False)]   # (column, descending)
         self.proceso = None
         c.log = self._log_hilo           # messages from auto_cdlc go to the log panel, not to the terminal
         self.sub_title = f"{c.VERSION}"
@@ -223,7 +273,11 @@ class AutoCdlc(App):
             with TabPane(T("Canciones", "Songs"), id="tab-canciones"):
                 with Vertical():
                     with Horizontal(id="canciones-panel"):
-                        yield DataTable(id="tabla", cursor_type="row", zebra_stripes=True)
+                        with Vertical(id="lista"):
+                            yield Input(placeholder=T("Filtrar: artista, álbum, canción, afinación, tono…  (tecla /)",
+                                                      "Filter: artist, album, song, tuning, tone…  (key /)"),
+                                        id="filtro")
+                            yield DataTable(id="tabla", cursor_type="row", zebra_stripes=True)
                         yield VerticalScroll(Static(id="informe"), id="detalle")
                     yield RichLog(id="registro", wrap=True, markup=True, max_lines=500)
             with TabPane(T("Tanda", "Batch"), id="tab-tanda"):
@@ -269,9 +323,6 @@ class AutoCdlc(App):
         yield Footer()
 
     def on_mount(self):
-        t = self.query_one("#tabla", DataTable)
-        t.add_columns(T("Canción", "Song"), T("Fiab.", "Rel."), "BPM", T("Compás", "Time"), T("Afinación", "Tuning"),
-                      T("Tono", "Tone"), T("Púa", "Pick"), "Scroll", T("Simpl.", "Simple"), T("Fecha", "Date"))
         self.cargar_canciones()
         self.cargar_archivos()
         self.cargar_ajustes()
@@ -302,14 +353,28 @@ class AutoCdlc(App):
 
     # ----- songs tab
     def cargar_canciones(self):
+        self.todas = canciones(self.salida)
+        self.pintar_tabla()
+
+    def pintar_tabla(self):
+        """Fills the table with the songs that pass the filter, in the chosen order, keeping the selection."""
         t = self.query_one("#tabla", DataTable)
-        fila_actual = t.cursor_row if t.row_count else 0
-        t.clear()
-        self.filas = canciones(self.salida)
+        antes = self.fila_actual()
+        antes = antes["carpeta"] if antes else None
+        palabras = normal(self.query_one("#filtro", Input).value).split()
+        filas = [f for f in self.todas if coincide(f, palabras)]
+        for col, desc in reversed(self.orden):          # stable sorts: the first column in self.orden wins
+            filas.sort(key=clave_orden(col), reverse=desc)
+        self.filas = filas
+        principal, desc = self.orden[0]
+        t.clear(columns=True)
+        for clave, es, en in COLUMNAS:
+            nombre = T(es, en) + ((" ▼" if desc else " ▲") if clave == principal else "")
+            t.add_column(nombre, key=clave, width=ANCHO.get(clave))
         for f in self.filas:
             nivel, color = NIVEL.get(f["fiabilidad"], ("?", "white"))
             nivel = T(f["fiabilidad"] or "?", nivel)
-            t.add_row(f["nombre"], f"[{color}]{nivel}[/{color}]",
+            t.add_row(f["artista"], f["album"], f["titulo"], f"[{color}]{nivel}[/{color}]",
                       f"{f['bpm']:.0f}" if f["bpm"] else "?", f["metro"] or "?",
                       c.afin_txt(f["afinacion"]) if f["afinacion"] else "?",
                       c.NOMBRE_PRESET.get((f["tono"] or "?").split(" (")[0], (f["tono"] or "?").split(" (")[0]),
@@ -318,11 +383,47 @@ class AutoCdlc(App):
                       SIMPLE_INV.get(f["simple"], "?") if f["completo"] else ("yes" if f["simple"] else "no"),
                       f["fecha"][:10], key=str(f["carpeta"]))
         if self.filas:
-            t.move_cursor(row=min(fila_actual, len(self.filas) - 1))
-            self.mostrar(self.filas[t.cursor_row])
+            pos = next((i for i, f in enumerate(self.filas) if f["carpeta"] == antes), 0)
+            t.move_cursor(row=pos)
+            self.mostrar(self.filas[pos])
+        elif self.todas:
+            self.query_one("#informe", Static).update(T("Ninguna canción coincide con el filtro.",
+                                                        "No song matches the filter."))
         else:
             self.query_one("#informe", Static).update(T("Todavía no hay canciones procesadas en output.",
                                                         "No processed songs in output yet."))
+        n = len(self.filas)
+        self.sub_title = f"{c.VERSION} · " + (T(f"{n} canciones", f"{n} songs") if n == len(self.todas)
+                                              else T(f"{n} de {len(self.todas)} canciones",
+                                                     f"{n} of {len(self.todas)} songs"))
+
+    @on(Input.Changed, "#filtro")
+    def _filtro(self, ev):
+        self.pintar_tabla()
+
+    @on(Input.Submitted, "#filtro")
+    def _filtro_hecho(self, ev):
+        self.query_one("#tabla", DataTable).focus()
+
+    def action_quitar_filtro(self):
+        filtro = self.query_one("#filtro", Input)
+        if filtro.value:
+            filtro.value = ""
+        self.query_one("#tabla", DataTable).focus()
+
+    def action_filtrar(self):
+        self.query_one("TabbedContent").active = "tab-canciones"
+        self.query_one("#filtro", Input).focus()
+
+    @on(DataTable.HeaderSelected, "#tabla")
+    def _ordenar(self, ev):
+        """Click a column header to sort by it; click it again to reverse. Ties keep artist/album/song order."""
+        col = str(ev.column_key.value)
+        principal, desc = self.orden[0]
+        desc = (not desc) if col == principal else col in ("fecha", "bpm")   # dates and tempo: highest first
+        base = [("artista", False), ("album", False), ("titulo", False)]
+        self.orden = [(col, desc)] + [o for o in base if o[0] != col]
+        self.pintar_tabla()
 
     def fila_actual(self):
         t = self.query_one("#tabla", DataTable)
