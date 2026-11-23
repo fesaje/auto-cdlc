@@ -23,6 +23,9 @@ files: code, configuration, README and installers.
     second gets its album added to the title, the DLC key now includes a hash of artist, album and title,
     and an mp3 is recognised as already processed by its name and size, not just its name. Songs from
     earlier versions that share a key are listed at the start of each batch; regenerating one fixes it.
+  - Wwise 2024 and later are detected and skipped (Rocksmith's tools only accept 2019 to 2023): with
+    several installed, a valid one is used; with only a newer one, a clear message says to add 2023.1.
+  - `--rebuild` with no folders builds the .psarc of every song that was left without one.
   - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - New `separation_model` option: `demucs` as an alternative to the default bass separator, for songs

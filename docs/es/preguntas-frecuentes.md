@@ -91,9 +91,11 @@ las normas de CustomsForge.
 ## Problemas
 
 ### No se crea el `.psarc`
-Casi siempre es Wwise. El resumen final lista las canciones "sin .psarc" con el motivo. Instala Wwise 2019,
-2021, 2022 o 2023; si está en otra unidad, pon su carpeta en `wwise` en `config.txt`. Luego repite
-esas canciones con `--force` o usa `--rebuild`.
+Casi siempre es Wwise. El resumen final lista las canciones "sin .psarc" con el motivo. Hace falta Wwise
+2019, 2021, 2022 o 2023: **la 2024 y posteriores no valen**, y el Audiokinetic Launcher instala por defecto
+la más nueva. Instala también la 2023.1 desde el Launcher (pueden convivir) y auto-cdlc usará esa. Si está
+en otra unidad, pon su carpeta en `wwise` en `config.txt`. Después, `process.bat --rebuild` sin nada más
+crea los .psarc de todas las canciones que se quedaron sin él, sin volver a analizarlas.
 
 ### Dos versiones de la misma canción (estudio y directo)
 

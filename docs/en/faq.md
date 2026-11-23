@@ -90,9 +90,11 @@ story: follow CustomsForge's rules.
 ## Problems
 
 ### No `.psarc` is created
-Almost always Wwise. The final summary lists songs "without .psarc" with the reason. Install Wwise 2019,
-2021, 2022 or 2023; if it's on another drive, put its folder in `wwise` in `config.txt`. Then run
-those songs again with `--force`, or use `--rebuild`.
+Almost always Wwise. The final summary lists songs "without .psarc" with the reason. It needs Wwise 2019,
+2021, 2022 or 2023: **2024 and later don't work**, and the Audiokinetic Launcher installs the newest one by
+default. Also install 2023.1 from the Launcher (they can live side by side) and auto-cdlc will use that one.
+If it's on another drive, put its folder in `wwise` in `config.txt`. Then `process.bat --rebuild` on its
+own builds the .psarc of every song that was left without one, without analysing them again.
 
 ### Two versions of the same song (studio and live)
 

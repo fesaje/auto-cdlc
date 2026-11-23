@@ -2750,6 +2750,8 @@ def preparar_instalacion(idioma):
     ww = buscar_wwise(conf.get("wwise"))
     if ww:
         log(T(f"  Wwise encontrado: {ww}", f"  Wwise found: {ww}"))
+    elif WWISE_NO_VALIDAS:
+        log("  " + T("AVISO: ", "WARNING: ") + texto_wwise_no_valida())
     else:
         log(T("  AVISO: no encuentro Wwise. Hace falta para convertir el audio al formato de Rocksmith.\n"
               "  Instala Wwise 2019, 2021, 2022 o 2023 desde https://ignition4.customsforge.com/tools/wwise\n"
@@ -2828,10 +2830,52 @@ def ruta_cdlc_pack():
 WWISE_SUBRUTA = Path("Authoring") / "x64" / "Release" / "bin" / "WwiseConsole.exe"
 
 
+WWISE_VALIDAS = (2019, 2021, 2022, 2023)       # what Rocksmith2014.NET has project templates for
+WWISE_NO_VALIDAS = []                           # [(path, version)] found but not usable, for the messages
+
+
+def version_wwise(exe):
+    """Major version (year) of a WwiseConsole.exe, read from the file's version info like cdlc-pack does;
+    from the folder name if that fails. None if unknown."""
+    exe = str(exe)
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            v = ctypes.windll.version
+            n = v.GetFileVersionInfoSizeW(exe, None)
+            if n:
+                buf = ctypes.create_string_buffer(n)
+                p, largo = ctypes.c_void_p(), wintypes.UINT()
+                if v.GetFileVersionInfoW(exe, 0, n, buf) and \
+                        v.VerQueryValueW(buf, "\\", ctypes.byref(p), ctypes.byref(largo)) and largo.value >= 52:
+                    info = ctypes.cast(p, ctypes.POINTER(ctypes.c_uint32 * 13)).contents
+                    return info[4] >> 16          # VS_FIXEDFILEINFO.dwProductVersionMS, high word
+        except Exception:
+            pass
+    m = re.search(r"(20[12]\d)", exe)
+    return int(m.group(1)) if m else None
+
+
+def texto_wwise_no_valida():
+    """Explains that the Wwise found is a version Rocksmith's tools can't use, and what to do."""
+    vistas = ", ".join(f"{v or '?'} ({Path(r).parents[4] if len(Path(r).parents) > 4 else r})" for r, v in WWISE_NO_VALIDAS)
+    return T(f"Wwise encontrado, pero en una versión que no sirve: {vistas}.\n"
+             "  Para Rocksmith hace falta la 2019, 2021, 2022 o 2023 (la 2024 y posteriores no valen).\n"
+             "  En el Audiokinetic Launcher instala también la 2023.1 (pueden convivir varias versiones) y\n"
+             "  después ejecuta process.bat --rebuild para crear los .psarc que faltan.",
+             f"Wwise found, but in a version that won't work: {vistas}.\n"
+             "  Rocksmith needs 2019, 2021, 2022 or 2023 (2024 and later don't work).\n"
+             "  In the Audiokinetic Launcher also install 2023.1 (several versions can live side by side),\n"
+             "  then run process.bat --rebuild to build the missing .psarc files.")
+
+
 def buscar_wwise(configurado=None):
-    """Path to WwiseConsole.exe. The configuration may give the .exe or the Wwise folder; otherwise it
-    tries WWISEROOT (on any drive, even if the folder name has no year, which cdlc-pack requires) and
-    the usual Program Files folders. None if not found."""
+    """Path to a WwiseConsole.exe of a version Rocksmith's tools accept (2019/2021/2022/2023). The
+    configuration may give the .exe or the Wwise folder; otherwise it tries WWISEROOT (on any drive, even
+    if the folder name has no year) and every Wwise in the usual Program Files folders. Versions that don't
+    work (2024 and later) are skipped and noted in WWISE_NO_VALIDAS. None if no usable one is found."""
+    WWISE_NO_VALIDAS.clear()
     candidatas = []
     for base in (configurado, os.environ.get("WWISEROOT")):
         if base:
@@ -2841,9 +2885,14 @@ def buscar_wwise(configurado=None):
         if pf and (Path(pf) / "Audiokinetic").is_dir():
             for d in sorted((Path(pf) / "Audiokinetic").glob("Wwise*"), reverse=True):
                 candidatas.append(d / WWISE_SUBRUTA)
+    vistas = set()
     for c in candidatas:
-        if c.is_file() and c.name.lower() == "wwiseconsole.exe":
-            return str(c)
+        if c.is_file() and c.name.lower() == "wwiseconsole.exe" and str(c).lower() not in vistas:
+            vistas.add(str(c).lower())
+            v = version_wwise(c)
+            if v is None or v in WWISE_VALIDAS:
+                return str(c)
+            WWISE_NO_VALIDAS.append((str(c), v))
     return None
 
 
@@ -2919,7 +2968,14 @@ def compilar_psarc(proyecto, carpeta, wwise=None):
                         log(T(f"  AVISO: el juego puntuará sobre {puntuables:.0f} notas y la canción tiene {maximas}",
                               f"  WARNING: the game will score {puntuables:.0f} notes and the song has {maximas}"))
     if r.returncode != 0 or not rutas:
-        detalle = (r.stderr or r.stdout).strip().splitlines()
+        todo = (r.stderr or "") + (r.stdout or "")
+        m = re.search(r"Unsupported Wwise version \(([^)]*)\)", todo)
+        if m:
+            return [], T(f"Wwise {m.group(1)} no vale, hace falta 2019, 2021, 2022 o 2023",
+                         f"Wwise {m.group(1)} won't work, it needs 2019, 2021, 2022 or 2023")
+        if "Could not find Wwise" in todo:
+            return [], T("no encuentro Wwise", "Wwise not found")
+        detalle = todo.strip().splitlines()
         return [], (detalle[-1] if detalle else f"código {r.returncode}")
     return rutas, None
 
@@ -3637,13 +3693,15 @@ def main():
         COMPILAR = False
     if COMPILAR:
         CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
-        if os.name == "nt" and not WWISE:
+        if os.name == "nt" and not WWISE and WWISE_NO_VALIDAS:
+            log(T("AVISO: ", "WARNING: ") + texto_wwise_no_valida())
+        elif os.name == "nt" and not WWISE:
             log(T("AVISO: no encuentro Wwise (WwiseConsole.exe), así que no se podrán crear los .psarc.\n"
                   "  Pon en config.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
                   "WARNING: Wwise (WwiseConsole.exe) not found, so the .psarc files can't be built.\n"
                   "  Set the wwise key in config.txt to the Wwise folder or to WwiseConsole.exe."))
     if a.reempaquetar:
-        sys.exit(reempaquetar(a.entradas))
+        sys.exit(reempaquetar(a.entradas, a.salida))
     if a.regenerar:
         if not a.entradas:
             log(T('Indica las carpetas de las canciones. Ejemplo: process.bat --regenerate "output\\Artista - Título" --tone overdrive',
@@ -3760,11 +3818,16 @@ def main():
               "No .psarc (the editable files are still in each song's folder):"))
         for n, e in SIN_PSARC:
             log(f"  - {n}: {e}")
-        if any("wwise" in (e or "").lower() for _, e in SIN_PSARC):
+        if any("2019, 2021" in (e or "") for _, e in SIN_PSARC):
+            log(T("  -> Esa versión de Wwise no sirve para Rocksmith. En el Audiokinetic Launcher instala también la\n"
+                  "     2023.1 (pueden convivir) y luego ejecuta process.bat --rebuild para crear los .psarc.",
+                  "  -> That Wwise version doesn't work for Rocksmith. In the Audiokinetic Launcher also install\n"
+                  "     2023.1 (they can live side by side), then run process.bat --rebuild to build the .psarc files."))
+        elif any("wwise" in (e or "").lower() for _, e in SIN_PSARC):
             log(T("  -> Parece un problema con Wwise: pon su carpeta o la ruta de WwiseConsole.exe en config.txt\n"
-                  "     (clave wwise) y repite esas canciones con --force.",
+                  "     (clave wwise) y luego ejecuta process.bat --rebuild para crear los .psarc.",
                   "  -> Looks like a Wwise problem: set its folder or the path to WwiseConsole.exe in config.txt\n"
-                  "     (wwise key) and redo those songs with --force."))
+                  "     (wwise key), then run process.bat --rebuild to build the .psarc files."))
     log(T(f"Registro de esta tanda (el que me puedes pasar): {registro.ruta.name}",
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:
@@ -3943,18 +4006,35 @@ def si_no_txt(v):
     return T("sí", "yes") if v else T("no", "no")
 
 
-def reempaquetar(entradas):
+def reempaquetar(entradas, salida=None):
     """Rebuilds the .psarc from each song's .rs2dlc project (and the XMLs it points to) without analysing
-    the audio again: for people who edit the tab by hand (EOF, an XML editor, DLC Builder)."""
-    if not entradas:
-        log(T("Indica las carpetas de las canciones (dentro de 'output') o sus .rs2dlc. Ejemplo:\n"
-              '  process.bat --rebuild "output\\Artista - Título"',
-              "Give the songs' folders (inside 'output') or their .rs2dlc files. Example:\n"
-              '  process.bat --rebuild "output\\Artist - Title"'))
-        return 2
+    the audio again: for people who edit the tab by hand (EOF, an XML editor, DLC Builder).
+    With no folders, it builds every song in 'output' whose .psarc couldn't be built (e.g. Wwise was
+    missing or was the wrong version)."""
+    import json
     if not ruta_cdlc_pack().exists():
         log(T(f"No encuentro {ruta_cdlc_pack()}.", f"{ruta_cdlc_pack()} not found."))
         return 1
+    if os.name == "nt" and not WWISE:
+        log(texto_wwise_no_valida() if WWISE_NO_VALIDAS else
+            T("No encuentro Wwise: hace falta para crear los .psarc. Pon su carpeta en config.txt, clave wwise.",
+              "Wwise not found: it's needed to build the .psarc files. Set its folder in config.txt, key wwise."))
+        return 1
+    if not entradas:
+        for diag in sorted(Path(salida or AQUI / "output").glob("*/diagnostico.json")):
+            try:
+                ps = json.loads(diag.read_text(encoding="utf-8")).get("psarc")
+            except Exception:
+                continue
+            if not ps or ps.get("codigo_salida") or not ps.get("tamaño_kb"):
+                entradas.append(diag.parent)
+        if not entradas:
+            log(T("Todas las canciones de output tienen ya su .psarc. Para una en concreto:\n"
+                  '  process.bat --rebuild "output\\Artista - Título"',
+                  "Every song in output already has its .psarc. For a particular one:\n"
+                  '  process.bat --rebuild "output\\Artist - Title"'))
+            return 0
+        log(T(f"Canciones sin .psarc: {len(entradas)}", f"Songs without a .psarc: {len(entradas)}"))
     CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
     proyectos = []
     for e in entradas:
@@ -3976,6 +4056,13 @@ def reempaquetar(entradas):
             bien += 1
             for r in rutas:
                 log(f"  -> {r}")
+            diag = pr.parent / "diagnostico.json"     # so a later --rebuild doesn't count it as missing
+            try:
+                d = json.loads(diag.read_text(encoding="utf-8"))
+                d["psarc"] = DIAG.get("psarc")
+                diag.write_text(json.dumps(d, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+            except Exception:
+                pass
         else:
             log(f"  ERROR: {error}")
     log(T(f"Terminado: {bien} de {len(proyectos)} .psarc creados en {CARPETA_PSARC}",

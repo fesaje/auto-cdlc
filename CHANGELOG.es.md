@@ -24,6 +24,10 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     lleva el álbum en el título, la clave del DLC incluye un resumen de artista, álbum y título, y un mp3
     se da por procesado por su nombre y tamaño, no solo por el nombre. Las canciones de versiones
     anteriores que comparten clave salen al empezar cada tanda; regenerar una lo arregla.
+  - Wwise 2024 y posteriores se detectan y se saltan (las herramientas de Rocksmith solo aceptan de la
+    2019 a la 2023): si hay varias, se usa una válida; si solo hay una nueva, un mensaje claro dice que
+    se instale la 2023.1.
+  - `--rebuild` sin carpetas crea los .psarc de todas las canciones que se quedaron sin él.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para
