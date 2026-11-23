@@ -15,6 +15,10 @@ files: code, configuration, README and installers.
   - `--regenerate` changes tone, pick, scroll speed, simplified arrangement or starting difficulty of a
     processed song in seconds. Each song now saves its analysis in `analisis.json`; songs from earlier
     versions can only change tone, pick and speed.
+  - Finds every Rocksmith 2014 install on the PC (Steam libraries and a quick look through the local
+    drives) and lets you choose which dlc folder gets the .psarc files, or Enter for auto-cdlc's own psarc
+    folder. It runs on install, from **Find Rocksmith…** in the interface's settings, or with
+    `process.bat --find-rocksmith`.
   - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - New `separation_model` option: `demucs` as an alternative to the default bass separator, for songs

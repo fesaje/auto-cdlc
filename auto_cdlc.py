@@ -2446,6 +2446,126 @@ def poner_clave(clave, valor):
     CONFIG.write_text(nuevo, encoding="utf-8")
 
 
+def _raices_steam():
+    """Steam's install folder(s), from the registry and the usual place."""
+    raices = []
+    try:
+        import winreg
+        for raiz, sub, valor in ((winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+                                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+                                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath")):
+            try:
+                with winreg.OpenKey(raiz, sub) as k:
+                    raices.append(Path(winreg.QueryValueEx(k, valor)[0]))
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    raices.append(Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam")
+    return raices
+
+
+def _unidades_locales():
+    """Fixed local drives (C:, D:...). Network, CD and USB-stick drives are left out: slow to walk."""
+    if os.name != "nt":
+        return [Path("/")]
+    import ctypes, string
+    unidades = []
+    mascara = ctypes.windll.kernel32.GetLogicalDrives()
+    for i, letra in enumerate(string.ascii_uppercase):
+        if mascara >> i & 1 and ctypes.windll.kernel32.GetDriveTypeW(f"{letra}:\\") == 3:   # 3 = DRIVE_FIXED
+            unidades.append(Path(f"{letra}:\\"))
+    return unidades
+
+
+SALTAR_AL_BUSCAR = {"windows", "$recycle.bin", "system volume information", "programdata", "appdata",
+                    "recovery", "$windows.~bt", "$windows.~ws", "windowsapps", "node_modules", ".git",
+                    "msocache", "perflogs", "intel", "amd", "nvidia"}
+
+
+def carpetas_rocksmith(limite_s=30, profundidad=5):
+    """Rocksmith 2014 installs on this PC, as their dlc folders: first the Steam libraries (registry and
+    libraryfolders.vdf), then a quick walk of the local drives (limited in depth and time) for copies
+    elsewhere. A folder counts if it has Rocksmith2014.exe or a dlc folder with .psarc files."""
+    import time
+    vistas, halladas = set(), []
+
+    def anotar(juego):
+        try:
+            clave = str(juego.resolve()).lower()
+        except OSError:
+            return
+        if clave in vistas:
+            return
+        vistas.add(clave)
+        dlc = juego / "dlc"
+        if (juego / "Rocksmith2014.exe").exists() or (dlc.is_dir() and any(dlc.glob("*.psarc"))):
+            halladas.append(dlc)
+
+    for raiz in _raices_steam():
+        libs = [raiz]
+        vdf = raiz / "steamapps" / "libraryfolders.vdf"
+        if vdf.exists():
+            texto = vdf.read_text(encoding="utf-8", errors="replace")
+            libs += [Path(m.replace("\\\\", "\\")) for m in re.findall(r'"path"\s*"([^"]+)"', texto)]
+        for lib in libs:
+            anotar(lib / "steamapps" / "common" / "Rocksmith2014")
+    fin = time.monotonic() + limite_s
+    for unidad in _unidades_locales():
+        pila = [(unidad, 0)]
+        while pila and time.monotonic() < fin:
+            carpeta, nivel = pila.pop()
+            try:
+                with os.scandir(carpeta) as it:
+                    for e in it:
+                        if not e.is_dir(follow_symlinks=False) or e.name.lower() in SALTAR_AL_BUSCAR:
+                            continue
+                        if e.name.lower() == "rocksmith2014":
+                            anotar(Path(e.path))
+                        elif nivel < profundidad:
+                            pila.append((Path(e.path), nivel + 1))
+            except OSError:
+                pass
+    return halladas
+
+
+def elegir_carpeta_psarc():
+    """Looks for Rocksmith installs and asks where the .psarc files should go. Enter keeps them in the
+    psarc folder next to auto-cdlc."""
+    log(T("\n  Buscando instalaciones de Rocksmith 2014 (puede tardar hasta medio minuto)...",
+          "\n  Looking for Rocksmith 2014 installs (can take up to half a minute)..."))
+    dlcs = carpetas_rocksmith()
+    if not dlcs:
+        log(T("  No he encontrado ninguna; los .psarc irán a la carpeta psarc de auto-cdlc.\n"
+              "  Puedes cambiarlo en config.txt, clave psarc_folder.",
+              "  None found; the .psarc files will go to auto-cdlc's psarc folder.\n"
+              "  You can change it in config.txt, key psarc_folder."))
+        return None
+    log(T("  ¿Dónde dejo los .psarc? Si eliges una carpeta dlc, las canciones aparecen directamente en el juego.",
+          "  Where should the .psarc files go? With a dlc folder, the songs show up straight in the game."))
+    for i, d in enumerate(dlcs, 1):
+        n = len(list(d.glob("*.psarc"))) if d.is_dir() else 0
+        log(f"    {i}. {d}  " + T(f"({n} .psarc)", f"({n} .psarc)"))
+    log(T(f"    Intro: carpeta psarc de auto-cdlc ({AQUI / 'psarc'})",
+          f"    Enter: auto-cdlc's psarc folder ({AQUI / 'psarc'})"))
+    while True:
+        try:
+            r = input(T("  Número [Intro]: ", "  Number [Enter]: ")).strip()
+        except EOFError:
+            r = ""
+        if not r:
+            poner_clave("psarc_folder", "")
+            log(T("  Hecho: los .psarc irán a la carpeta psarc de auto-cdlc.",
+                  "  Done: the .psarc files will go to auto-cdlc's psarc folder."))
+            return None
+        if r.isdigit() and 1 <= int(r) <= len(dlcs):
+            d = dlcs[int(r) - 1]
+            d.mkdir(parents=True, exist_ok=True)
+            poner_clave("psarc_folder", str(d))
+            log(T(f"  Hecho: los .psarc irán a {d}", f"  Done: the .psarc files will go to {d}"))
+            return d
+
+
 def preparar_instalacion(idioma):
     """Called by install.bat once the libraries are in place: migrates an old install, creates config.txt
     in the chosen language, offers Rocksmith's dlc folder for the .psarc files and checks Wwise."""
@@ -2468,20 +2588,8 @@ def preparar_instalacion(idioma):
               "  WARNING: Wwise not found. It's needed to convert the audio to Rocksmith's format.\n"
               "  Install Wwise 2019, 2021, 2022 or 2023 from https://ignition4.customsforge.com/tools/wwise\n"
               "  or put its folder in config.txt, key wwise."))
-    dlc = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam" / "steamapps" / \
-        "common" / "Rocksmith2014" / "dlc"
-    if dlc.is_dir() and not conf.get("psarc_folder"):
-        log(T(f"\n  He encontrado la carpeta dlc de Rocksmith:\n    {dlc}",
-              f"\n  Found Rocksmith's dlc folder:\n    {dlc}"))
-        try:
-            r = input(T("  ¿Dejar ahí los .psarc directamente? (s/n) [s]: ",
-                        "  Save the .psarc files straight there? (y/n) [y]: ")).strip().lower()
-        except EOFError:
-            r = "n"
-        if r[:1] in ("", "s", "y"):
-            poner_clave("psarc_folder", str(dlc))
-            log(T("  Hecho: los .psarc irán a la carpeta dlc de Rocksmith.",
-                  "  Done: the .psarc files will go to Rocksmith's dlc folder."))
+    if not conf.get("psarc_folder"):
+        elegir_carpeta_psarc()
     return 0
 
 
@@ -3237,9 +3345,15 @@ def main():
     g.add_argument("--start-difficulty", type=float, metavar="PCT", help="starting difficulty in %%")
     g.add_argument("--send", choices=["yes", "no"], help="send the anonymous results of this batch")
     ap.add_argument("--setup", metavar="LANG", help=argparse.SUPPRESS)   # used by install.bat
+    ap.add_argument("--find-rocksmith", action="store_true",
+                    help="look for Rocksmith installs on this PC and choose where the .psarc files go")
     a = ap.parse_args()
     if a.setup is not None:
         sys.exit(preparar_instalacion(a.setup))
+    if a.find_rocksmith:
+        entorno_basico()
+        elegir_carpeta_psarc()
+        sys.exit(0)
     global COMPILAR, CARPETA_PSARC, WWISE, SIN_INTERNET, UMBRAL_CENTS, DD_MODO, DD_INICIAL
     global PARTIR_REPETIDAS, UMBRAL_REATAQUE_DB, TONO_CREPE, TONO_MODO, VELOCIDAD_SCROLL, LETRA, ARREGLO_SIMPLE
     global VELOCIDAD_AUTO, IDIOMA

@@ -209,6 +209,11 @@ It works with the mouse or the keyboard and has three tabs:
 
 `process.bat` keeps working as always and is still the one that checks for updates.
 
+**Where the .psarc files go.** With several Rocksmith installs on the PC (other Steam libraries, a copy on
+another drive), **Find Rocksmith…** next to `psarc_folder` in Settings lists them all with how many .psarc
+each dlc folder has; pick one, or the first option for auto-cdlc's own `psarc` folder, and press Save. The
+same from the command line: `process.bat --find-rocksmith`. The installer asks this too.
+
 ## Retouching a song without analysing it again
 
 Tone, pick, scroll speed, simplified arrangement and starting difficulty can be changed afterwards in a few

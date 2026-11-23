@@ -212,6 +212,12 @@ Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Command
 
 `process.bat` sigue funcionando como siempre y es el que busca actualizaciones.
 
+**Dónde van los .psarc.** Si tienes varias instalaciones de Rocksmith en el PC (otras bibliotecas de Steam,
+una copia en otro disco), **Buscar Rocksmith…**, junto a `psarc_folder` en Ajustes, las lista todas con
+cuántos .psarc tiene cada carpeta dlc; elige una, o la primera opción para la carpeta `psarc` de auto-cdlc,
+y pulsa Guardar. Lo mismo desde la línea de comandos: `process.bat --find-rocksmith`. El instalador también
+lo pregunta.
+
 ## Retocar una canción sin volver a analizarla
 
 Tono, púa, velocidad de scroll, arreglo simplificado y dificultad inicial se pueden cambiar después en unos

@@ -16,6 +16,10 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
   - `--regenerate` cambia tono, púa, velocidad de scroll, arreglo simplificado o dificultad inicial de una
     canción procesada en segundos. Cada canción guarda ahora su análisis en `analisis.json`; las de
     versiones anteriores solo pueden cambiar tono, púa y velocidad.
+  - Busca todas las instalaciones de Rocksmith 2014 del PC (bibliotecas de Steam y un repaso rápido de los
+    discos locales) y deja elegir a qué carpeta dlc van los .psarc, o Intro para la carpeta psarc de
+    auto-cdlc. Se hace al instalar, con **Buscar Rocksmith…** en los ajustes de la interfaz o con
+    `process.bat --find-rocksmith`.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para

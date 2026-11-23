@@ -120,6 +120,36 @@ def coincide(f, palabras):
     return all(p in texto for p in palabras)
 
 
+# ---------------------------------------------------------------- Rocksmith folder chooser
+class ElegirDlc(ModalScreen):
+    """Lists the Rocksmith installs found and returns the chosen dlc folder ("" = auto-cdlc's psarc folder)."""
+    BINDINGS = [Binding("escape", "cancelar", T("Cancelar", "Cancel"))]
+
+    def __init__(self, dlcs):
+        super().__init__()
+        self.dlcs = dlcs
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import OptionList
+        opciones = [T(f"Carpeta psarc de auto-cdlc ({c.AQUI / 'psarc'})",
+                      f"auto-cdlc's psarc folder ({c.AQUI / 'psarc'})")]
+        for d in self.dlcs:
+            n = len(list(d.glob("*.psarc"))) if d.is_dir() else 0
+            opciones.append(f"{d}  ({n} .psarc)")
+        with Vertical(id="dialogo"):
+            yield Label(T("¿Dónde dejo los .psarc? Con una carpeta dlc, las canciones aparecen directamente en el juego.",
+                          "Where should the .psarc files go? With a dlc folder, the songs show up straight in the game.")
+                        if self.dlcs else
+                        T("No he encontrado ninguna instalación de Rocksmith.", "No Rocksmith install found."))
+            yield OptionList(*opciones, id="dlcs")
+
+    def on_option_list_option_selected(self, ev):
+        self.dismiss("" if ev.option_index == 0 else str(self.dlcs[ev.option_index - 1]))
+
+    def action_cancelar(self):
+        self.dismiss(None)
+
+
 # ---------------------------------------------------------------- retouch dialog
 class Retocar(ModalScreen):
     """Dialog to change a song's settings and rebuild it."""
@@ -238,7 +268,11 @@ class AutoCdlc(App):
     #ajustes Horizontal { height: auto; }
     #ajustes Label { width: 50; padding: 1 1 0 0; }
     #ajustes Input, #ajustes Select { width: 1fr; }
-    Retocar { align: center middle; }
+    Retocar, ElegirDlc { align: center middle; }
+    #dlcs { height: auto; max-height: 12; margin-top: 1; }
+    ElegirDlc #dialogo { width: 90%; max-width: 120; }
+    ElegirDlc Label { width: 100%; }
+    #cfg-buscar-dlc { margin-left: 1; }
     #dialogo { width: 70; height: auto; border: thick $primary; background: $surface; padding: 1 2; }
     #botones { height: auto; margin-top: 1; }
     #botones Button { margin-right: 2; }
@@ -319,6 +353,8 @@ class AutoCdlc(App):
                                 yield Select([(o, o) for o in opciones], id=f"cfg-{clave}", allow_blank=True)
                             else:
                                 yield Input(id=f"cfg-{clave}")
+                            if clave == "psarc_folder":
+                                yield Button(T("Buscar Rocksmith…", "Find Rocksmith…"), id="cfg-buscar-dlc")
                     yield Button(T("Guardar en config.txt", "Save to config.txt"), variant="primary", id="cfg-guardar")
         yield Footer()
 
@@ -585,6 +621,27 @@ class AutoCdlc(App):
                     w.clear()
             else:
                 w.value = v
+
+    @on(Button.Pressed, "#cfg-buscar-dlc")
+    def buscar_dlc(self):
+        self.query_one("#cfg-buscar-dlc", Button).disabled = True
+        self.notify(T("Buscando instalaciones de Rocksmith (hasta medio minuto)…",
+                      "Looking for Rocksmith installs (up to half a minute)…"))
+        self._buscar_dlc()
+
+    @work(thread=True)
+    def _buscar_dlc(self):
+        dlcs = c.carpetas_rocksmith()
+        self.call_from_thread(self._dlc_encontradas, dlcs)
+
+    def _dlc_encontradas(self, dlcs):
+        self.query_one("#cfg-buscar-dlc", Button).disabled = False
+
+        def elegida(r):
+            if r is not None:
+                self.query_one("#cfg-psarc_folder", Input).value = r
+                self.notify(T("Pulsa Guardar para aplicarlo.", "Press Save to apply it."))
+        self.push_screen(ElegirDlc(dlcs), elegida)
 
     @on(Button.Pressed, "#cfg-guardar")
     def guardar(self):
