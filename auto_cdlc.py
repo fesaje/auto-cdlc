@@ -42,7 +42,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
@@ -290,7 +290,7 @@ def _huella(ruta):
 
 def _misma_entrada(diag, ruta):
     """True if the song in this diagnostico.json came from the file 'ruta' (by name and size; songs processed
-    before 0.5.1 stored the size in KB under 'entrada')."""
+    before 0.5.2 stored the size in KB under 'entrada')."""
     if diag.get("archivo") != ruta.name:
         return False
     if "huella" in diag:
@@ -304,7 +304,7 @@ def _misma_entrada(diag, ruta):
 
 def _indice_salida(salida):
     """{input file: folder} of what's already processed in 'output' (read once per run). Keys are the
-    file's fingerprint (name|size) and, for songs from before 0.5.1, just its name."""
+    file's fingerprint (name|size) and, for songs from before 0.5.2, just its name."""
     import json
     clave = str(Path(salida).resolve())
     if clave not in _INDICES:
@@ -390,7 +390,7 @@ def destino(ruta, salida):
     # por el nombre del mp3 guardado en su diagnostico.json
     idx = _indice_salida(salida)
     previa = idx.get(_huella(ruta))
-    if previa is None and ruta.name in idx:      # processed before 0.5.1: only the name was stored
+    if previa is None and ruta.name in idx:      # processed before 0.5.2: only the name was stored
         try:
             d = json.loads((idx[ruta.name] / "diagnostico.json").read_text(encoding="utf-8"))
             previa = idx[ruta.name] if _misma_entrada(d, ruta) else None
@@ -1985,7 +1985,7 @@ def poner_ids(proyecto, clave):
 
 
 def claves_repetidas(salida):
-    """Groups of processed songs that share a DLC key (possible before 0.5.1): the game shows only one."""
+    """Groups of processed songs that share a DLC key (possible before 0.5.2): the game shows only one."""
     import json
     por_clave = {}
     for p in Path(salida).glob("*/*.rs2dlc"):
@@ -2909,7 +2909,7 @@ def buscar_wwise(configurado=None):
 
 def _sufijo_psarc(proyecto):
     """cdlc-pack names the .psarc 'Artist_Title_v1_p.psarc'. Two processed songs with the same artist and
-    title (from before 0.5.1, when the album wasn't added to repeated titles) would overwrite each other's
+    title (from before 0.5.2, when the album wasn't added to repeated titles) would overwrite each other's
     file, so the one with a new-style key gets it in the name: 'Artist_Title_v1_k3x9qa_p.psarc'."""
     import json
     try:

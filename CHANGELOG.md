@@ -7,14 +7,9 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
-- **0.5.1**: a text interface and retouching without analysing again.
-  - `auto-cdlc.bat` opens an interface in the style of Midnight Commander with three tabs: processed
-    songs (report, retouch, rebuild, open folder, play clicks and A/B), batch (pick songs from `input`,
-    choose the settings and launch it) and settings (`config.txt`). The songs list has Artist, Album and Song
-    columns: click a header to sort by it (again to reverse) and type in the filter box (key `/`).
-  - `--regenerate` changes tone, pick, scroll speed, simplified arrangement or starting difficulty of a
-    processed song in seconds. Each song now saves its analysis in `analisis.json`; songs from earlier
-    versions can only change tone, pick and speed.
+- **0.5.2**: sorting and filtering, choosing the Rocksmith folder, and fixes.
+  - The songs list in the interface has Artist, Album and Song columns: click a header to sort by it
+    (again to reverse) and type in the filter box (key `/`).
   - Finds every Rocksmith 2014 install on the PC (Steam libraries and a quick look through the local
     drives) and lets you choose which dlc folder gets the .psarc files, or Enter for auto-cdlc's own psarc
     folder. It runs on install, from **Find Rocksmith…** in the interface's settings, or with
@@ -29,6 +24,13 @@ files: code, configuration, README and installers.
   - Invisible characters in the tags (a BOM at the start of the title, zero-width spaces) are removed;
     they made a song fail with "'charmap' codec can't encode character". The console output can no
     longer make a song fail either.
+- **0.5.1**: a text interface and retouching without analysing again.
+  - `auto-cdlc.bat` opens an interface in the style of Midnight Commander with three tabs: processed
+    songs (report, retouch, rebuild, open folder, play clicks and A/B), batch (pick songs from `input`,
+    choose the settings and launch it) and settings (`config.txt`).
+  - `--regenerate` changes tone, pick, scroll speed, simplified arrangement or starting difficulty of a
+    processed song in seconds. Each song now saves its analysis in `analisis.json`; songs from earlier
+    versions can only change tone, pick and speed.
   - Batch options that skip the questions: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - New `separation_model` option: `demucs` as an alternative to the default bass separator, for songs

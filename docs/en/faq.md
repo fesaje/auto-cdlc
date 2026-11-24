@@ -98,7 +98,7 @@ own builds the .psarc of every song that was left without one, without analysing
 
 ### Two versions of the same song (studio and live)
 
-Rocksmith tells songs apart by artist and title. Since 0.5.1, if you process a song whose artist and title
+Rocksmith tells songs apart by artist and title. Since 0.5.2, if you process a song whose artist and title
 are already in `output` but from a different mp3, the album is added to its title: *Song (Live at X)*.
 Both show up in the game and neither file overwrites the other. The album comes from the mp3 tags, the
 "Artist - Album - NN - Title" file name, or the folder the mp3 is in.

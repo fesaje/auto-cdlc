@@ -99,7 +99,7 @@ crea los .psarc de todas las canciones que se quedaron sin él, sin volver a ana
 
 ### Dos versiones de la misma canción (estudio y directo)
 
-Rocksmith distingue las canciones por artista y título. Desde la 0.5.1, si procesas una canción cuyo artista
+Rocksmith distingue las canciones por artista y título. Desde la 0.5.2, si procesas una canción cuyo artista
 y título ya están en `output` pero de otro mp3, se le añade el álbum al título: *Canción (Directo en X)*.
 Las dos aparecen en el juego y ningún archivo pisa al otro. El álbum sale de las etiquetas del mp3, del nombre
 "Artista - Álbum - NN - Título" o de la carpeta donde está el mp3.

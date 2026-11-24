@@ -7,15 +7,9 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
-- **0.5.1**: interfaz de texto y retoques sin volver a analizar.
-  - `auto-cdlc.bat` abre una interfaz al estilo de Midnight Commander con tres pestañas: canciones
-    procesadas (informe, retocar, recompilar, abrir carpeta, oír clics y A/B), tanda (elegir canciones de
-    `input`, ajustes y lanzarla) y ajustes (`config.txt`). La lista de canciones tiene columnas Artista,
-    Álbum y Canción: pulsa una cabecera para ordenar por ella (otra vez para invertir) y escribe en el
-    filtro (tecla `/`).
-  - `--regenerate` cambia tono, púa, velocidad de scroll, arreglo simplificado o dificultad inicial de una
-    canción procesada en segundos. Cada canción guarda ahora su análisis en `analisis.json`; las de
-    versiones anteriores solo pueden cambiar tono, púa y velocidad.
+- **0.5.2**: ordenar y filtrar, elegir la carpeta de Rocksmith y arreglos.
+  - La lista de canciones de la interfaz tiene columnas Artista, Álbum y Canción: pulsa una cabecera
+    para ordenar por ella (otra vez para invertir) y escribe en el filtro (tecla `/`).
   - Busca todas las instalaciones de Rocksmith 2014 del PC (bibliotecas de Steam y un repaso rápido de los
     discos locales) y deja elegir a qué carpeta dlc van los .psarc, o Intro para la carpeta psarc de
     auto-cdlc. Se hace al instalar, con **Buscar Rocksmith…** en los ajustes de la interfaz o con
@@ -31,6 +25,13 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
   - Se quitan los caracteres invisibles de las etiquetas (una marca BOM al principio del título, espacios
     de ancho cero), que hacían fallar la canción con "'charmap' codec can't encode character". Lo que se
     muestra en la consola ya tampoco puede hacer fallar una canción.
+- **0.5.1**: interfaz de texto y retoques sin volver a analizar.
+  - `auto-cdlc.bat` abre una interfaz al estilo de Midnight Commander con tres pestañas: canciones
+    procesadas (informe, retocar, recompilar, abrir carpeta, oír clics y A/B), tanda (elegir canciones de
+    `input`, ajustes y lanzarla) y ajustes (`config.txt`).
+  - `--regenerate` cambia tono, púa, velocidad de scroll, arreglo simplificado o dificultad inicial de una
+    canción procesada en segundos. Cada canción guarda ahora su análisis en `analisis.json`; las de
+    versiones anteriores solo pueden cambiar tono, púa y velocidad.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para
