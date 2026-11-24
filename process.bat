@@ -32,6 +32,7 @@ echo.
 echo %M_UPD%
 uv sync --frozen
 if exist "procesar.bat.nuevo" move /y "procesar.bat.nuevo" "procesar.bat" >nul
+if exist "auto-cdlc.bat.nuevo" move /y "auto-cdlc.bat.nuevo" "auto-cdlc.bat" >nul
 if not exist "process.bat.nuevo" goto run
 rem this file is replaced while running: the move and the relaunch must stay on the same line
 move /y "process.bat.nuevo" "process.bat" >nul & "%~f0" %*

@@ -207,7 +207,7 @@ It works with the mouse or the keyboard and has three tabs:
   **Start**. The progress shows up below. It's the same as `process.bat`, without the questions.
 - **Settings**: every option in `config.txt`, with a short explanation. **Save** writes them to the file.
 
-`process.bat` keeps working as always and is still the one that checks for updates.
+`process.bat` keeps working as always. Both check for a new version when they start.
 
 **Where the .psarc files go.** With several Rocksmith installs on the PC (other Steam libraries, a copy on
 another drive), **Find Rocksmith…** next to `psarc_folder` in Settings lists them all with how many .psarc

@@ -7,6 +7,8 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.5.3**: `auto-cdlc.bat` also checks for a new version before opening the interface (until now only
+  `process.bat` did).
 - **0.5.2**: sorting and filtering, choosing the Rocksmith folder, and fixes.
   - The songs list in the interface has Artist, Album and Song columns: click a header to sort by it
     (again to reverse) and type in the filter box (key `/`).

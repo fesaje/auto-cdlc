@@ -210,7 +210,7 @@ Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Command
 - **Ajustes**: todas las opciones de `config.txt` con una explicación corta. **Guardar** las escribe en el
   archivo.
 
-`process.bat` sigue funcionando como siempre y es el que busca actualizaciones.
+`process.bat` sigue funcionando como siempre. Los dos buscan versión nueva al arrancar.
 
 **Dónde van los .psarc.** Si tienes varias instalaciones de Rocksmith en el PC (otras bibliotecas de Steam,
 una copia en otro disco), **Buscar Rocksmith…**, junto a `psarc_folder` en Ajustes, las lista todas con

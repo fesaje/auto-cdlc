@@ -42,7 +42,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
@@ -3504,7 +3504,7 @@ def fusionar_configuracion(actual, plantilla):
 # an install that hasn't been migrated yet is updated).
 CONSERVAR = {"config.txt", "input", "output", "models", "psarc", "pending_uploads", ".venv", ".git",
              "configuracion.txt", "entrada", "salida", "modelos", "envios_pendientes"}
-BATS_EN_MARCHA = {"process.bat", "procesar.bat"}    # may be running: replaced by process.bat after exiting
+BATS_EN_MARCHA = {"process.bat", "procesar.bat", "auto-cdlc.bat"}    # may be running: replaced by process.bat after exiting
 
 
 def comprobar_actualizacion(preguntar):
@@ -3622,6 +3622,8 @@ def main():
     g.add_argument("--start-difficulty", type=float, metavar="PCT", help="starting difficulty in %%")
     g.add_argument("--send", choices=["yes", "no"], help="send the anonymous results of this batch")
     ap.add_argument("--setup", metavar="LANG", help=argparse.SUPPRESS)   # used by install.bat
+    ap.add_argument("--update-only", action="store_true",
+                    help="only check for a new version and install it (used by auto-cdlc.bat)")
     ap.add_argument("--find-rocksmith", action="store_true",
                     help="look for Rocksmith installs on this PC and choose where the .psarc files go")
     a = ap.parse_args()
@@ -3741,10 +3743,12 @@ def main():
     if not (a.sin_actualizar or SIN_INTERNET or not si("check_updates")):
         if comprobar_actualizacion(preguntas):
             if os.environ.get("AUTO_CDLC_BAT"):
-                raise SystemExit(10)        # process.bat installs the new libraries and relaunches
+                raise SystemExit(10)        # the .bat installs the new libraries and relaunches
             log(T("Vuelve a lanzar el programa para usar la versión nueva (antes: uv sync --frozen).",
                   "Launch the program again to use the new version (first: uv sync --frozen)."))
             return
+    if a.update_only:
+        return
     entradas = [Path(e) for e in a.entradas] or [AQUI / "input"]
     archivos = []
     for e in entradas:
