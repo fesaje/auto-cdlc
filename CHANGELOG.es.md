@@ -28,6 +28,9 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
     2019 a la 2023): si hay varias, se usa una válida; si solo hay una nueva, un mensaje claro dice que
     se instale la 2023.1.
   - `--rebuild` sin carpetas crea los .psarc de todas las canciones que se quedaron sin él.
+  - Se quitan los caracteres invisibles de las etiquetas (una marca BOM al principio del título, espacios
+    de ancho cero), que hacían fallar la canción con "'charmap' codec can't encode character". Lo que se
+    muestra en la consola ya tampoco puede hacer fallar una canción.
   - Opciones de tanda que se saltan las preguntas: `--tone`, `--pick`, `--scroll`, `--simple`,
     `--start-difficulty`, `--send`.
   - Nueva opción `separation_model`: `demucs` como alternativa al separador del bajo de siempre, para

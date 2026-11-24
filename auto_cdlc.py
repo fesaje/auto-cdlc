@@ -131,7 +131,12 @@ BPM_MIN, BPM_MAX = 60, 180
 
 
 def log(msg):
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        # a console that isn't UTF-8 (run without process.bat): show what it can instead of failing the song
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(str(msg).encode(enc, "replace").decode(enc, "replace"), flush=True)
 
 
 IDIOMA = "es"              # interface language: es / en (config.txt: language)
@@ -406,8 +411,14 @@ def destino(ruta, salida):
     return base, salida / base, artista, titulo, fuente, et
 
 
+INVISIBLES = re.compile("[\ufeff\u200b-\u200f\u202a-\u202e\u2060-\u2064\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def arreglar_texto(texto):
-    """Repara textos con la codificación rota (p. ej. 'EdiciÃ³n' -> 'Edición'), típico de etiquetas ID3."""
+    """Repara textos con la codificación rota (p. ej. 'EdiciÃ³n' -> 'Edición'), típico de etiquetas ID3, y quita
+    caracteres invisibles (la marca BOM que dejan algunos programas al principio de una etiqueta, espacios de
+    ancho cero, marcas de dirección): no se ven, pero rompen nombres de archivo y consolas que no son UTF-8."""
+    texto = INVISIBLES.sub("", texto).strip() if texto else texto
     if texto and any(m in texto for m in ("Ã", "Â", "â€")):
         try:
             return texto.encode("cp1252", errors="strict").decode("utf-8")
@@ -1874,7 +1885,7 @@ def escribir_letra(ruta, lrc, desplazamiento, fin_cancion):
     lineas = []
     for l in lrc.splitlines():
         marcas = re.findall(r"\[(\d+):(\d+(?:\.\d+)?)\]", l)
-        texto = re.sub(r"\[[^\]]*\]", "", l).strip()
+        texto = INVISIBLES.sub("", re.sub(r"\[[^\]]*\]", "", l)).strip()
         for mm, ss in marcas:
             lineas.append((int(mm) * 60 + float(ss) + desplazamiento, texto))
     lineas.sort()
