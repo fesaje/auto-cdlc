@@ -42,7 +42,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import numpy as np
 
 AQUI = Path(__file__).resolve().parent
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
 ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
@@ -232,11 +232,33 @@ def partes_nombre(stem):
     return artista, "", quitar_coletilla(" - ".join(resto))
 
 
+COLETILLA = (r"(official )?(music )?(video ?clip|videoclip|video oficial|v[ií]deo|lyric video|visuali[sz]er|"
+             r"audio( oficial)?|official (audio|video|music video|lyric video)|letra|lyrics?|hd|hq|4k)")
+
+
 def quitar_coletilla(titulo):
-    """Quita '(Official Video)', '[Videoclip]', '(Letra)'... y el id de YouTube '[dQw4w9WgXcQ]'."""
-    t = re.sub(r"\s*[\(\[](official )?(music )?(video ?clip|videoclip|video oficial|v[ií]deo|lyric video|"
-               r"audio( oficial)?|official (audio|video)|letra|lyrics?)[\)\]]", "", titulo, flags=re.I)
-    return re.sub(r"\s*\[[A-Za-z0-9_-]{11}\]$", "", t).strip()
+    """Quita '(Official Video)', '[Videoclip]', '(Letra)', '(MP3_320K)'... también sin paréntesis al final
+    ('... Official Video', como dejan los nombres de archivo de las descargas), y el id de YouTube."""
+    t = re.sub(r"\s*[\(\[]" + COLETILLA + r"[\)\]]", "", titulo, flags=re.I)
+    t = re.sub(r"\s*[\(\[]\s*(mp3|m4a|aac|flac|ogg)?[ _-]?\d{2,3}\s?k(bps)?\s*[\)\]]", "", t, flags=re.I)
+    t = re.sub(r"\s*[\(\[](mp3|m4a|flac)[\)\]]", "", t, flags=re.I)
+    t = re.sub(r"\s*\[[A-Za-z0-9_-]{11}\]$", "", t)
+    t = re.sub(r"\s+(official (music |lyric )?video|official audio|lyric video|video ?clip|videoclip)$", "", t, flags=re.I)
+    return t.strip()
+
+
+def _sin_artista_delante(titulo, artista):
+    """'THE BLUE VAN "Racketeer"' o 'Wallows – Calling After Me' con artista 'The Blue Van' / 'Wallows':
+    el título de muchos vídeos lleva el artista delante. Se quita, y también las comillas alrededor."""
+    if artista:
+        patron = r"\s*".join(re.escape(p) for p in artista.split())
+        m = re.match(r"^\s*" + patron + r"\s*(?:[-:|]\s*)?(?=\S)", titulo, flags=re.I)
+        if m and len(titulo) > m.end():
+            titulo = titulo[m.end():]
+    titulo = titulo.strip()
+    if len(titulo) > 2 and titulo[0] in "\"“'‘«" and titulo[-1] in "\"”'’»":
+        titulo = titulo[1:-1].strip()
+    return titulo
 
 
 def metadatos(ruta):
@@ -244,26 +266,33 @@ def metadatos(ruta):
     relleno), después el nombre 'Artista - Título', y por último lo que haya.
     Devuelve (artista, titulo, fuente, etiquetas)."""
     et = leer_etiquetas(ruta)
+    guion = lambda x: re.sub(r"\s+[–—]\s+", " - ", x or "")       # en / em dash as separator
+    # descargas de YouTube: el "álbum" es el título del vídeo; no es un disco y estropearía portada y letra
+    if et.get("album") and et.get("title") and \
+            (_normalizar(et["album"]) == _normalizar(et["title"]) or re.search(COLETILLA + r"\)?\s*$", et["album"], re.I)):
+        et = {k: v for k, v in et.items() if k != "album"}
     a_et = et.get("artist") or et.get("albumartist") or ""
     a_et = a_et.split(" / ")[0]  # varios artistas: el primero
-    t_et = et.get("title", "")
-    stem = ruta.stem.replace("_", " ").strip()
+    t_et = guion(et.get("title", ""))
+    stem = guion(ruta.stem.replace("_", " ")).strip()
     a_nom, _, t_nom = partes_nombre(stem)
     a_et, t_et = re.sub(r"\s+", " ", a_et).strip(), re.sub(r"\s+", " ", t_et).strip()
     # etiquetas de descargas de YouTube: "LosPlanetasVEVO" / "Los Planetas - Topic" y "Artista - Título (Videoclip)"
-    a_et = re.sub(r"\s*(VEVO|- Topic|Official)$", "", a_et, flags=re.I).strip()
+    a_et = re.sub(r"\s*(VEVO|- Topic|(official\s*)?(youtube\s*)?channel|official( music)?)$", "",
+                  a_et, flags=re.I).strip()
     t_et = quitar_coletilla(t_et)
     if " - " in t_et:
         izq, der = (x.strip() for x in t_et.split(" - ", 1))
         if _normalizar(izq).replace(" ", "") in (_normalizar(a_et).replace(" ", ""), _normalizar(a_nom).replace(" ", "")) \
                 or not a_et:
             a_et, t_et = izq, der
+    t_et = _sin_artista_delante(t_et, a_et)
     if _etiqueta_valida(a_et) and _etiqueta_valida(t_et):
         return a_et, t_et, "etiquetas", et
     if a_nom and t_nom:
         return a_nom, t_nom, "nombre del archivo", et
-    artista = a_et if _etiqueta_valida(a_et) else "Desconocido"
-    titulo = t_et if _etiqueta_valida(t_et) else stem
+    artista = a_et if _etiqueta_valida(a_et) else T("Desconocido", "Unknown")
+    titulo = t_et if _etiqueta_valida(t_et) else (quitar_coletilla(stem) or stem)
     return artista, titulo, "mixta", et
 
 
@@ -532,6 +561,30 @@ def activacion_beat_this(wav_mezcla):
     return np.repeat(act, 2, axis=0), np.asarray(beats)
 
 
+def unificar_octava(beats):
+    """Keeps the same pulse level through the whole song. Beat trackers sometimes switch to half the tempo
+    for a stretch (a half-time breakdown, a fade-out) or to double (a fast drum fill): from then on the bars
+    come out twice as long or short and the notes get quantised to the wrong grid. Measured against the
+    song's median beat: a stretch at about half speed gets a beat in the middle of each gap, and one at
+    about double speed loses every other beat. Real tempo changes (other ratios) are left alone.
+    Returns (beats, added, removed)."""
+    beats = np.asarray(beats, dtype=float)
+    if len(beats) < 16:
+        return beats, 0, 0
+    ref = float(np.median(np.diff(beats)))
+    out, puestos, quitados = [beats[0]], 0, 0
+    k = 1
+    while k < len(beats):
+        r = (beats[k] - out[-1]) / ref
+        if r < 0.62 and k + 1 < len(beats) and 0.75 < (beats[k + 1] - out[-1]) / ref < 1.35:
+            quitados += 1; k += 1               # double speed: this beat falls between two real ones
+            continue
+        if 1.7 < r < 2.35:
+            out.append((out[-1] + beats[k]) / 2); puestos += 1
+        out.append(beats[k]); k += 1
+    return np.array(out), puestos, quitados
+
+
 def reparar_beats(beats):
     """Rellena los beats que faltan y quita los que sobran: un hueco de 2 o 3 beats (tramo flojo donde
     el detector se calla) se parte en beats iguales, y un beat metido a mitad (doble) se quita. Sin esto,
@@ -599,6 +652,9 @@ def detectar_beats(wav_mezcla):
     if act is None:
         from madmom.features.downbeats import RNNDownBeatProcessor
         act = np.asarray(RNNDownBeatProcessor()(str(wav_mezcla)))
+    beats, o_puestos, o_quitados = unificar_octava(beats)
+    if o_puestos or o_quitados:
+        info["octava_unificada"] = {"beats_puestos": o_puestos, "beats_quitados": o_quitados}
     beats, puestos, quitados = reparar_beats(beats)
     info["beats_rellenados"], info["beats_quitados"] = puestos, quitados
     DIAG["deteccion_pulso"] = info
@@ -1128,7 +1184,15 @@ def escribir_gp5(ruta, tab, compases, tempos, artista, titulo, cuerdas):
     n_compases = len(compases)
     import guitarpro
     from guitarpro import models as gp
-    song = gp.Song(); song.title = titulo; song.artist = artista; song.tempo = tempos[0]
+    # GP5 guarda los textos en cp1252: lo que no quepa ('ł', 'ő', japonés...) se cambia por la letra sin tilde
+    # o por '?', en vez de hacer fallar toda la canción
+    def cp1252(x):
+        import unicodedata
+        x = INVISIBLES.sub("", x or "")
+        return "".join(ch if ch.encode("cp1252", "ignore") else
+                       (unicodedata.normalize("NFKD", ch).encode("cp1252", "ignore").decode("cp1252") or "?")
+                       for ch in x)
+    song = gp.Song(); song.title = cp1252(titulo); song.artist = cp1252(artista); song.tempo = tempos[0]
     pista = song.tracks[0]; pista.name = "Bajo"; pista.channel.instrument = 33
     pista.strings = [gp.GuitarString(i + 1, v) for i, v in enumerate(reversed(cuerdas))]; pista.fretCount = 24
     h0 = song.measureHeaders[0]; h0.timeSignature.numerator = compases[0][1]; h0.timeSignature.denominator.value = 4

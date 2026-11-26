@@ -7,6 +7,15 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
+- **0.5.4**: a partir de los resultados enviados estos días.
+  - Pulso más estable: cuando el detector de pulso baja a la mitad de tempo en un tramo (un "half-time",
+    un final que se apaga) o sube al doble, se añaden o se quitan los beats que sobran o faltan, para que
+    los compases y la rejilla de semicorcheas sean los mismos en toda la canción.
+  - Mejores nombres en descargas de YouTube: nombres de canal ("… Official YouTube channel", "VEVO"), el
+    artista repetido al principio del título, comillas, "Official Video" sin paréntesis, "(MP3_320K)" y un
+    "álbum" que solo es el título del vídeo; así se encuentran más a menudo la letra y la portada.
+  - Los títulos con caracteres que el formato .gp5 no admite (polaco, japonés…) ya no hacen fallar la canción.
+  - En inglés, las canciones sin artista van como "Unknown" en vez de "Desconocido".
 - **0.5.3**: `auto-cdlc.bat` también busca versión nueva antes de abrir la interfaz (hasta ahora solo lo
   hacía `process.bat`).
 - **0.5.2**: ordenar y filtrar, elegir la carpeta de Rocksmith y arreglos.

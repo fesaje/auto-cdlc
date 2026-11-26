@@ -7,6 +7,15 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.5.4**: from the reports sent in the last few days.
+  - Steadier beat: when the beat tracker drops to half the tempo for a stretch (a half-time breakdown, a
+    fade-out) or jumps to double, the missing beats are added or the extra ones removed, so the bars and
+    the 16th-note grid stay the same through the song.
+  - Better names from YouTube downloads: channel names ("… Official YouTube channel", "VEVO"), the artist
+    repeated at the start of the title, quotes, "Official Video" without brackets, "(MP3_320K)" and an
+    "album" that is just the video title are cleaned up, so lyrics and album art are found more often.
+  - Titles with characters that the .gp5 format can't store (Polish, Japanese…) no longer make the song fail.
+  - In English, songs without an artist are filed under "Unknown" instead of "Desconocido".
 - **0.5.3**: `auto-cdlc.bat` also checks for a new version before opening the interface (until now only
   `process.bat` did).
 - **0.5.2**: sorting and filtering, choosing the Rocksmith folder, and fixes.
