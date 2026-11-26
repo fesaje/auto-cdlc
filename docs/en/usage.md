@@ -202,9 +202,13 @@ It works with the mouse or the keyboard and has three tabs:
   **/** to filter) with its reliability, BPM, tuning, tone, pick, scroll speed and
   arrangement. Select one to see its report. Keys: **e** retouch (tone, pick, speed… see below), **b**
   build the `.psarc` again, **o** open its folder, **c** play the clicks, **a** play the A/B, **r** refresh.
-- **Batch**: the songs in `input` (the ones already processed are marked). Tick the ones you want, choose
-  starting difficulty, simplified arrangement, tone, pick and whether to send results, and press
-  **Start**. The progress shows up below. It's the same as `process.bat`, without the questions.
+- **Batch**: the songs in `input` and its subfolders, grouped by artist and album (from the tags), each
+  marked new, processed, failed before or no bass. New ones come ticked. **Space** ticks the line under the
+  cursor (a whole album or artist at once); **All**, **None**, **Only new** and **Invert** (keys t, n, v,
+  i) act on the list. A ticked song that was already processed is done again. Choose the options on the
+  right, check the summary at the bottom and press **Start**: the right side then shows the progress, and
+  each song ends as done (reliable or worth checking), error or no bass. **Show in Songs** opens the
+  Songs tab with just that batch. It's the same as `process.bat`, without the questions.
 - **Settings**: every option in `config.txt`, with a short explanation. **Save** writes them to the file.
 
 `process.bat` keeps working as always. Both check for a new version when they start.

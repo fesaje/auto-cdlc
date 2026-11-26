@@ -23,8 +23,8 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import (Button, DataTable, Footer, Header, Input, Label, RichLog, Select, SelectionList,
-                             Static, Switch, TabbedContent, TabPane)
+from textual.widgets import (Button, ContentSwitcher, DataTable, Footer, Header, Input, Label, ProgressBar,
+                             RichLog, Select, Static, Switch, TabbedContent, TabPane, Tree)
 
 import auto_cdlc as c
 
@@ -32,6 +32,10 @@ CONF = c.entorno_basico()        # language first: the labels below depend on it
 T = c.T
 TONOS = ["auto", "clean", "clean_pick", "overdrive", "distortion", "fuzz"]
 SIMPLE = {"no": None, "bar": 0, "half": 1, "beat": 2, "eighth": 3}
+NOMBRE_SIMPLE = {"no": ("no", "no"), "bar": ("bar (1 nota por compás)", "bar (1 note per bar)"),
+                 "half": ("half (1 nota cada 2 pulsos)", "half (1 note every 2 beats)"),
+                 "beat": ("beat (1 nota por pulso)", "beat (1 note per beat)"),
+                 "eighth": ("eighth (1 nota por corchea)", "eighth (1 note per eighth)")}
 SIMPLE_INV = {v: k for k, v in SIMPLE.items()}
 NIVEL = {"alta": ("high", "green"), "media": ("medium", "yellow"), "baja": ("low", "red")}
 
@@ -118,6 +122,45 @@ def coincide(f, palabras):
     """True if every word of the filter appears in the song's artist, album, title, tuning or tone."""
     texto = normal(" ".join(str(f.get(k) or "") for k in ("artista", "album", "titulo", "afinacion", "tono")))
     return all(p in texto for p in palabras)
+
+
+# ---------------------------------------------------------------- batch: songs in input as a tree
+CARPETAS_HECHAS = {"processed", "discarded", "procesadas", "descartadas"}   # mover_entradas() puts them there
+ESTADOS = {"nueva": ("nueva", "new"), "procesada": ("procesada", "processed"),
+           "fallo": ("falló antes", "failed before"), "sin_bajo": ("sin bajo", "no bass")}
+
+
+def archivos_input():
+    """Audio files in input and its subfolders, leaving out the ones already moved to processed/discarded."""
+    entrada = c.AQUI / "input"
+    if not entrada.is_dir():
+        return []
+    return sorted(p for p in entrada.rglob("*") if p.is_file() and p.suffix.lower() in c.EXTENSIONES
+                  and not (set(x.lower() for x in p.relative_to(entrada).parts[:-1]) & CARPETAS_HECHAS))
+
+
+def duracion_audio(p):
+    try:
+        from mutagen import File
+        return float(File(str(p)).info.length)
+    except Exception:
+        return None
+
+
+class ArbolTanda(Tree):
+    """Artist > album > song, with a tick box on each line. Space ticks the line under the cursor (a whole
+    album or artist at once); the other keys act on the whole list."""
+    BINDINGS = [
+        Binding("space", "marcar", T("Marcar", "Tick")),
+        Binding("t", "app.marcar_todas", T("Todas", "All")),
+        Binding("n", "app.marcar_ninguna", T("Ninguna", "None")),
+        Binding("v", "app.marcar_nuevas", T("Solo nuevas", "Only new")),
+        Binding("i", "app.marcar_invertir", T("Invertir", "Invert")),
+    ]
+
+    def action_marcar(self):
+        if self.cursor_node is not None:
+            self.app.marcar_nodo(self.cursor_node)
 
 
 # ---------------------------------------------------------------- Rocksmith folder chooser
@@ -260,11 +303,24 @@ class AutoCdlc(App):
     #filtro { margin: 0 0 0 0; }
     #tabla { height: 1fr; }
     #detalle { width: 2fr; border-left: solid $primary; padding: 0 1; }
-    #registro, #tanda-log { height: 1fr; border-top: solid $primary; }
-    #tanda-opciones { height: auto; }
-    #tanda-opciones > Vertical { width: 1fr; height: auto; padding: 0 1; }
-    #archivos { height: 1fr; min-height: 4; }
-    #tanda-log { min-height: 6; }
+    #registro { height: 1fr; border-top: solid $primary; }
+    #tanda-cuerpo { height: 1fr; }
+    #tanda-lista { width: 3fr; }
+    #tanda-botones { height: auto; margin: 1 0 0 0; }
+    #tanda-botones Button { margin-right: 1; }
+    #arbol { height: 1fr; margin-top: 1; }
+    #tanda-derecha { width: 2fr; border-left: solid $primary; padding: 0 1; }
+    #tanda-opciones Label { margin-top: 1; }
+    #tanda-opciones Select, #tanda-opciones Input { width: 100%; }
+    .titulo { text-style: bold; color: $accent; }
+    .fila-switch { height: auto; margin-top: 1; }
+    .fila-switch Label { margin: 1 0 0 1; }
+    #tanda-progreso { height: 1fr; }
+    #p-total { margin: 1 0; }
+    #tanda-log { height: 1fr; border-top: solid $primary; }
+    #tanda-pie { height: auto; border-top: solid $primary; padding: 0 1; }
+    #tanda-resumen { width: 1fr; padding: 1 0; }
+    #tanda-pie Button { margin-left: 1; }
     #ajustes Horizontal { height: auto; }
     #ajustes Label { width: 50; padding: 1 1 0 0; }
     #ajustes Input, #ajustes Select { width: 1fr; }
@@ -297,6 +353,8 @@ class AutoCdlc(App):
         self.todas = []                  # every processed song
         self.orden = [("artista", False), ("album", False), ("titulo", False)]   # (column, descending)
         self.proceso = None
+        self.items, self.filtro_tanda, self.actual, self.tanda, self.hechas_tanda = [], None, None, {}, []
+        self.terminada = False
         c.log = self._log_hilo           # messages from auto_cdlc go to the log panel, not to the terminal
         self.sub_title = f"{c.VERSION}"
 
@@ -316,32 +374,46 @@ class AutoCdlc(App):
                     yield RichLog(id="registro", wrap=True, markup=True, max_lines=500)
             with TabPane(T("Tanda", "Batch"), id="tab-tanda"):
                 with Vertical():
-                    yield Label(T("Canciones de input (marca las que quieras procesar):",
-                                  "Songs in input (tick the ones to process):"))
-                    yield SelectionList(id="archivos")
-                    with Horizontal(id="tanda-opciones"):
-                        with Vertical():
-                            yield Label(T("Dificultad inicial (%)", "Starting difficulty (%)"))
-                            yield Input(id="t-dd")
-                            yield Label(T("Arreglo simplificado", "Simplified arrangement"))
-                            yield Select([(k, k) for k in SIMPLE], id="t-simple", allow_blank=False, value="beat")
-                        with Vertical():
-                            yield Label(T("Tono (todas)", "Tone (all songs)"))
-                            yield Select([(T("el de cada disco / config", "each album's / config"), "")] +
-                                         [(t, t) for t in TONOS], id="t-tono", allow_blank=False, value="")
-                            yield Label(T("Púa (todas)", "Pick (all songs)"))
-                            yield Select([(T("el de cada disco / detectar", "each album's / detect"), ""),
-                                          (T("con púa", "pick"), "yes"), (T("con dedos", "fingers"), "no")],
-                                         id="t-pua", allow_blank=False, value="")
-                        with Vertical():
-                            yield Label(T("Enviar resultados anónimos", "Send anonymous results"))
-                            yield Switch(id="t-enviar", value=True)
-                            yield Label(T("Repetir las ya procesadas", "Redo songs already processed"))
-                            yield Switch(id="t-forzar", value=False)
-                            with Horizontal():
-                                yield Button(T("Empezar", "Start"), variant="primary", id="t-empezar")
-                                yield Button(T("Parar", "Stop"), variant="error", id="t-parar", disabled=True)
-                    yield RichLog(id="tanda-log", wrap=True, max_lines=5000)
+                    with Horizontal(id="tanda-cuerpo"):
+                        with Vertical(id="tanda-lista"):
+                            yield Label(id="tanda-cabecera")
+                            with Horizontal(id="tanda-botones"):
+                                yield Button(T("Todas", "All"), id="m-todas", compact=True)
+                                yield Button(T("Ninguna", "None"), id="m-ninguna", compact=True)
+                                yield Button(T("Solo nuevas", "Only new"), id="m-nuevas", compact=True)
+                                yield Button(T("Invertir", "Invert"), id="m-invertir", compact=True)
+                            yield ArbolTanda("input", id="arbol")
+                        with ContentSwitcher(initial="tanda-opciones", id="tanda-derecha"):
+                            with VerticalScroll(id="tanda-opciones"):
+                                yield Label(T("OPCIONES DE LA TANDA", "BATCH OPTIONS"), classes="titulo")
+                                yield Label(T("Tono del bajo", "Bass tone"))
+                                yield Select([(T("el de cada disco / config", "each album's / config"), "")] +
+                                             [(t, t) for t in TONOS], id="t-tono", allow_blank=False, value="")
+                                yield Label(T("Púa", "Pick"))
+                                yield Select([(T("la de cada disco / detectar", "each album's / detect"), ""),
+                                              (T("con púa", "pick"), "yes"), (T("con dedos", "fingers"), "no")],
+                                             id="t-pua", allow_blank=False, value="")
+                                yield Label(T("Arreglo simplificado", "Simplified arrangement"))
+                                yield Select([(T(*NOMBRE_SIMPLE[k]), k) for k in SIMPLE], id="t-simple",
+                                             allow_blank=False, value="beat")
+                                yield Label(T("Dificultad inicial (%)", "Starting difficulty (%)"))
+                                yield Input(id="t-dd")
+                                yield Label(T("[dim]0 = la canción empieza en el nivel más fácil[/dim]",
+                                              "[dim]0 = the song starts at the easiest level[/dim]"))
+                                with Horizontal(classes="fila-switch"):
+                                    yield Switch(id="t-enviar", value=True)
+                                    yield Label(T("Enviar resultados anónimos", "Send anonymous results"))
+                            with Vertical(id="tanda-progreso"):
+                                yield Label(T("PROGRESO", "PROGRESS"), classes="titulo")
+                                yield Label(id="p-actual")
+                                yield Label(id="p-paso")
+                                yield ProgressBar(id="p-total", show_eta=False)
+                                yield RichLog(id="tanda-log", wrap=True, max_lines=5000, markup=True)
+                    with Horizontal(id="tanda-pie"):
+                        yield Label(id="tanda-resumen")
+                        yield Button(T("Ver en Canciones", "Show in Songs"), id="t-ver", disabled=True)
+                        yield Button(T("▶ Empezar", "▶ Start"), variant="primary", id="t-empezar")
+                        yield Button(T("■ Parar", "■ Stop"), variant="error", id="t-parar", disabled=True)
             with TabPane(T("Ajustes", "Settings"), id="tab-ajustes"):
                 with VerticalScroll(id="ajustes"):
                     for clave, tipo, opciones, etiqueta in CAMPOS:
@@ -399,6 +471,8 @@ class AutoCdlc(App):
         antes = antes["carpeta"] if antes else None
         palabras = normal(self.query_one("#filtro", Input).value).split()
         filas = [f for f in self.todas if coincide(f, palabras)]
+        if self.filtro_tanda:                              # "Show in Songs" after a batch
+            filas = [f for f in filas if normal(f["titulo"]) in self.filtro_tanda]
         for col, desc in reversed(self.orden):          # stable sorts: the first column in self.orden wins
             filas.sort(key=clave_orden(col), reverse=desc)
         self.filas = filas
@@ -435,6 +509,8 @@ class AutoCdlc(App):
 
     @on(Input.Changed, "#filtro")
     def _filtro(self, ev):
+        if ev.value:
+            self.filtro_tanda = None
         self.pintar_tabla()
 
     @on(Input.Submitted, "#filtro")
@@ -442,6 +518,9 @@ class AutoCdlc(App):
         self.query_one("#tabla", DataTable).focus()
 
     def action_quitar_filtro(self):
+        if self.filtro_tanda:
+            self.filtro_tanda = None
+            self.pintar_tabla()
         filtro = self.query_one("#filtro", Input)
         if filtro.value:
             filtro.value = ""
@@ -483,8 +562,10 @@ class AutoCdlc(App):
             self.mostrar(self.filas[ev.cursor_row])
 
     def action_refrescar(self):
+        self.filtro_tanda = None
         self.cargar_canciones()
-        self.cargar_archivos()
+        if self.proceso is None:
+            self.volver_a_opciones()
 
     def action_carpeta(self):
         f = self.fila_actual()
@@ -541,24 +622,145 @@ class AutoCdlc(App):
 
     # ----- batch tab
     def cargar_archivos(self):
-        sl = self.query_one("#archivos", SelectionList)
-        sl.clear_options()
-        entrada = c.AQUI / "input"
-        archivos = sorted(p for p in entrada.iterdir() if p.is_file() and p.suffix.lower() in c.EXTENSIONES) \
-            if entrada.is_dir() else []
-        for p in archivos:
-            nombre, carpeta = c.destino(p, self.salida)[:2]
-            hecha = (carpeta / f"{nombre}.gp5").exists()
-            sl.add_option((p.name + ("  [dim](" + T("ya procesada", "already processed") + ")[/dim]" if hecha else ""),
-                           str(p), not hecha))
+        """Reads input (and its subfolders): artist, album and title of each file from its tags, and whether it
+        is new, already processed, failed before or had no bass. New ones come ticked."""
+        _, fallidas, sin_bajo = c.historial(self.salida)
+        self.items = []
+        for p in archivos_input():
+            try:
+                artista, titulo, _, et = c.metadatos(p)
+                album = c._album_de(p, et)
+                nombre, carpeta = c.destino(p, self.salida)[:2]
+                hecha = (carpeta / f"{nombre}.gp5").exists()
+            except Exception:
+                artista, titulo, album, hecha = T("Desconocido", "Unknown"), p.stem, "", False
+            estado = ("procesada" if hecha else "sin_bajo" if p.name in sin_bajo
+                      else "fallo" if p.name in fallidas else "nueva")
+            self.items.append({"ruta": p, "artista": artista, "album": album or T("(sin álbum)", "(no album)"),
+                               "titulo": titulo, "estado": estado, "marcada": estado == "nueva",
+                               "dur": duracion_audio(p), "resultado": None})
+        self.pintar_arbol(reconstruir=True)
+
+    def pintar_arbol(self, reconstruir=False):
+        arbol = self.query_one("#arbol", ArbolTanda)
+        if reconstruir:
+            arbol.clear()
+            arbol.show_root = False
+            grupos = {}
+            for it in sorted(self.items, key=lambda x: (normal(x["artista"]), normal(x["album"]), normal(x["titulo"]))):
+                grupos.setdefault(it["artista"], {}).setdefault(it["album"], []).append(it)
+            for artista, albumes in grupos.items():
+                na = arbol.root.add("", data={"grupo": [i for l in albumes.values() for i in l]}, expand=True)
+                na.data["nombre"] = artista
+                for album, items in albumes.items():
+                    nb = na.add("", data={"grupo": items, "nombre": album}, expand=True)
+                    for it in items:
+                        it["nodo"] = nb.add_leaf("", data={"item": it})
+        caja = lambda m: "[b]\\[x][/b]\u00a0" if m is True else "\\[-]\u00a0" if m is None else "\\[ ]\u00a0"
+        def pintar(nodo):
+            d = nodo.data or {}
+            if "item" in d:
+                it = d["item"]
+                est = it["resultado"] or ("[dim]" + T(*ESTADOS[it["estado"]]) + "[/dim]")
+                dur = f"  [dim]{int(it['dur'] // 60)}:{int(it['dur'] % 60):02d}[/dim]" if it["dur"] else ""
+                nodo.set_label(f"{caja(it['marcada'])}{it['titulo']}  {est}{dur}")
+            elif "grupo" in d:
+                ms = [i["marcada"] for i in d["grupo"]]
+                m = True if all(ms) else False if not any(ms) else None
+                nodo.set_label(f"{caja(m)}[b]{d['nombre']}[/b]\u00a0 [dim]({len(ms)})[/dim]")
+            for h in nodo.children:
+                pintar(h)
+        pintar(arbol.root)
+        self.actualizar_resumen()
+
+    def actualizar_resumen(self):
+        marcadas = [i for i in self.items if i["marcada"]]
+        n = {k: sum(1 for i in self.items if i["estado"] == k) for k in ESTADOS}
+        self.query_one("#tanda-cabecera", Label).update(
+            T("[b]CANCIONES EN INPUT[/b]\u00a0 ", "[b]SONGS IN INPUT[/b]\u00a0 ") + f"({len(self.items)} · " +
+            ", ".join(f"{v} {T(*ESTADOS[k])}" for k, v in n.items() if v) + ")")
+        if self.proceso is not None or self.terminada:
+            return
+        if not self.items:
+            txt = T("No hay canciones en input. Mete los mp3 en la carpeta input (o en subcarpetas) y pulsa r.",
+                    "No songs in input. Put your mp3s in the input folder (or subfolders) and press r.")
+        elif not marcadas:
+            txt = T("Marca las canciones que quieras procesar (espacio, o los botones de arriba).",
+                    "Tick the songs to process (space, or the buttons above).")
+        else:
+            nuevas = sum(1 for i in marcadas if i["estado"] == "nueva")
+            seg = (c.historial(self.salida)[0] or 270.0) * len(marcadas)
+            txt = T(f"Se van a procesar [b]{len(marcadas)}\u00a0[/b]" + ("canción" if len(marcadas) == 1 else "canciones"),
+                    f"[b]{len(marcadas)}\u00a0[/b]" + ("song" if len(marcadas) == 1 else "songs") + " to process")
+            if len(marcadas) - nuevas:
+                txt += T(f" ({nuevas} nuevas, {len(marcadas) - nuevas} se repiten)",
+                         f" ({nuevas} new, {len(marcadas) - nuevas} redone)")
+            txt += T(" · unos ", " · about ") + c.duracion_txt(seg)
+        self.query_one("#tanda-resumen", Label).update(txt)
+        self.query_one("#t-empezar", Button).disabled = not marcadas
+
+    def marcar_nodo(self, nodo):
+        d = nodo.data or {}
+        if self.proceso is not None or self.terminada:
+            return
+        if "item" in d:
+            d["item"]["marcada"] = not d["item"]["marcada"]
+        elif "grupo" in d:
+            nuevo = not all(i["marcada"] for i in d["grupo"])
+            for i in d["grupo"]:
+                i["marcada"] = nuevo
+        self.pintar_arbol()
+
+    def _marcar(self, regla):
+        if self.proceso is None and not self.terminada:
+            for i in self.items:
+                i["marcada"] = regla(i)
+            self.pintar_arbol()
+
+    def action_marcar_todas(self):
+        self._marcar(lambda i: True)
+
+    def action_marcar_ninguna(self):
+        self._marcar(lambda i: False)
+
+    def action_marcar_nuevas(self):
+        self._marcar(lambda i: i["estado"] == "nueva")
+
+    def action_marcar_invertir(self):
+        self._marcar(lambda i: not i["marcada"])
+
+    @on(Button.Pressed, "#m-todas")
+    def _b_todas(self):
+        self.action_marcar_todas()
+
+    @on(Button.Pressed, "#m-ninguna")
+    def _b_ninguna(self):
+        self.action_marcar_ninguna()
+
+    @on(Button.Pressed, "#m-nuevas")
+    def _b_nuevas(self):
+        self.action_marcar_nuevas()
+
+    @on(Button.Pressed, "#m-invertir")
+    def _b_invertir(self):
+        self.action_marcar_invertir()
+
+    @on(Tree.NodeSelected, "#arbol")
+    def _clic_arbol(self, ev):
+        if ev.node.data and "item" in ev.node.data:      # click (or Enter) on a song ticks it
+            self.marcar_nodo(ev.node)
 
     @on(Button.Pressed, "#t-empezar")
     def empezar(self):
-        archivos = self.query_one("#archivos", SelectionList).selected
-        if not archivos:
+        if self.terminada:                       # after a batch the button reads "New batch"
+            self.volver_a_opciones()
+            return
+        marcadas = [i for i in self.items if i["marcada"]]
+        if not marcadas:
             self.notify(T("No hay canciones marcadas", "No songs ticked"), severity="warning")
             return
-        orden = [sys.executable, str(c.AQUI / "auto_cdlc.py"), "--no-questions", "--no-update", *archivos]
+        orden = [sys.executable, str(c.AQUI / "auto_cdlc.py"), "--no-questions", "--no-update",
+                 *[str(i["ruta"]) for i in marcadas]]
         dd = self.query_one("#t-dd", Input).value.replace("%", "").strip()
         if dd:
             orden += ["--start-difficulty", dd]
@@ -568,16 +770,69 @@ class AutoCdlc(App):
         if self.query_one("#t-pua", Select).value:
             orden += ["--pick", self.query_one("#t-pua", Select).value]
         orden += ["--send", "yes" if self.query_one("#t-enviar", Switch).value else "no"]
-        if self.query_one("#t-forzar", Switch).value:
-            orden.append("--force")
+        if any(i["estado"] != "nueva" for i in marcadas):
+            orden.append("--force")           # a ticked song that was already done (or failed) is redone
+        for i in self.items:
+            i["resultado"] = ("[dim]" + T("en cola", "queued") + "[/dim]") if i["marcada"] else None
+        self.tanda = {i["ruta"].name: i for i in marcadas}
+        self.hechas_tanda = []
+        barra = self.query_one("#p-total", ProgressBar)
+        barra.update(total=len(marcadas), progress=0)
+        self.query_one("#p-actual", Label).update("")
+        self.query_one("#p-paso", Label).update("")
+        self.query_one("#tanda-derecha", ContentSwitcher).current = "tanda-progreso"
         self.query_one("#t-empezar", Button).disabled = True
         self.query_one("#t-parar", Button).disabled = False
+        self.query_one("#t-ver", Button).disabled = True
         self.query_one("#tanda-log", RichLog).clear()
+        self.proceso = True                 # set before the thread starts: the list is locked from now on
+        self.query_one("#tanda-resumen", Label).update(
+            T(f"Procesando {len(marcadas)} " + ("canción…" if len(marcadas) == 1 else "canciones…"),
+              f"Processing {len(marcadas)} " + ("song…" if len(marcadas) == 1 else "songs…")))
+        self.pintar_arbol()
         self.lanzar(orden)
+
+    def _linea_tanda(self, linea):
+        """Follows the batch's output: which song is running, how it ended, the current step."""
+        import re
+        self.query_one("#tanda-log", RichLog).write(linea)
+        m = re.match(r"\s*\[(\d+)/(\d+)\] (.+?)  \(", linea)
+        if m:
+            it = self.tanda.get(m.group(3))
+            if it:
+                it["resultado"] = "[yellow]" + T("en marcha…", "running…") + "[/yellow]"
+                self.actual = it
+                self.query_one("#p-actual", Label).update(
+                    T(f"Canción {m.group(1)} de {m.group(2)} · ", f"Song {m.group(1)} of {m.group(2)} · ") +
+                    f"[b]{it['titulo']}[/b]")
+                self.pintar_arbol()
+            return
+        it = getattr(self, "actual", None)
+        if it is None:
+            return
+        fin = None
+        paso = re.match(r"\s*\[(\d)/(\d)\] ", linea)
+        if paso:                                 # steps inside a song: move the bar a little
+            self.query_one("#p-total", ProgressBar).update(
+                progress=len(self.hechas_tanda) + (int(paso.group(1)) - 1) / int(paso.group(2)))
+        if linea.startswith("  OK:"):
+            dudosa = re.search(r"fiabilidad|reliability|cuidado|careful", linea, re.I)
+            fin = ("[green]" + T("hecha", "done") + "[/green] · " +
+                   ("[yellow]" + T("revisar", "check it") + "[/yellow]" if dudosa else T("fiable", "reliable")))
+        elif linea.startswith(("  ERROR:", "  SIN BAJO:", "  NO BASS:")):
+            fin = "[red]" + ("error" if "ERROR" in linea else T("sin bajo", "no bass")) + "[/red]"
+        if fin:
+            it["resultado"] = fin
+            self.hechas_tanda.append(it)
+            self.actual = None
+            self.query_one("#p-total", ProgressBar).update(progress=len(self.hechas_tanda))
+            self.query_one("#p-paso", Label).update("")
+            self.pintar_arbol()
+        elif linea.strip():
+            self.query_one("#p-paso", Label).update("[dim]" + linea.strip()[:70] + "[/dim]")
 
     @work(thread=True, exclusive=True, group="tanda")
     def lanzar(self, orden):
-        log = self.query_one("#tanda-log", RichLog)
         entorno = {**os.environ, "PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1"}
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         self.proceso = subprocess.Popen(orden, cwd=str(c.AQUI), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -587,21 +842,50 @@ class AutoCdlc(App):
             linea = linea.rstrip()
             # progress bars of the models would flood the log
             if linea and "it/s]" not in linea and "s/it]" not in linea and "Warning" not in linea:
-                self.call_from_thread(log.write, linea)
+                self.call_from_thread(self._linea_tanda, linea)
         codigo = self.proceso.wait()
-        self.proceso = None
-        self.call_from_thread(log.write, T(f"--- terminado (código {codigo}) ---", f"--- finished (code {codigo}) ---"))
+        self.call_from_thread(self.query_one("#tanda-log", RichLog).write,
+                              T(f"--- terminado (código {codigo}) ---", f"--- finished (code {codigo}) ---"))
         self.call_from_thread(self._tanda_terminada)
 
     def _tanda_terminada(self):
-        self.query_one("#t-empezar", Button).disabled = False
+        self.proceso = None
         self.query_one("#t-parar", Button).disabled = True
+        hechas = len(self.hechas_tanda)
+        for i in self.items:                    # songs that never started (stopped batch)
+            if i["marcada"] and i not in self.hechas_tanda:
+                i["resultado"] = "[dim]" + T("no procesada", "not processed") + "[/dim]"
+        self.query_one("#tanda-resumen", Label).update(
+            T(f"Tanda terminada: {hechas} de {len(self.tanda)} canciones. ", f"Batch finished: {hechas} of {len(self.tanda)} songs. ") +
+            T("[b]Ver en Canciones[/b] para revisarlas, [b]Nueva tanda[/b] para otra.",
+              "[b]Show in Songs[/b] to check them, [b]New batch[/b] for another one."))
+        self.query_one("#t-ver", Button).disabled = not hechas
+        self.terminada = True
+        self.query_one("#t-empezar", Button).label = T("Nueva tanda", "New batch")
+        self.query_one("#t-empezar", Button).disabled = False
+        self.pintar_arbol()
         self.cargar_canciones()
+
+    @on(Button.Pressed, "#t-ver")
+    def ver_en_canciones(self):
+        """Songs tab filtered to this batch's songs (by title)."""
+        self.query_one("TabbedContent").active = "tab-canciones"
+        titulos = [i["titulo"] for i in self.hechas_tanda]
+        self.filtro_tanda = {normal(t) for t in titulos}
+        self.query_one("#filtro", Input).value = ""
+        self.pintar_tabla()
+        self.query_one("#tabla", DataTable).focus()
+
+    def volver_a_opciones(self):
+        self.terminada = False
+        self.query_one("#t-empezar", Button).label = T("▶ Empezar", "▶ Start")
+        self.query_one("#tanda-derecha", ContentSwitcher).current = "tanda-opciones"
+        self.query_one("#t-ver", Button).disabled = True
         self.cargar_archivos()
 
     @on(Button.Pressed, "#t-parar")
     def parar(self):
-        if self.proceso and self.proceso.poll() is None:
+        if self.proceso not in (None, True) and self.proceso.poll() is None:
             self.proceso.terminate()
             self.notify(T("Parando la tanda (la canción en curso se pierde)", "Stopping the batch (the current song is lost)"))
 

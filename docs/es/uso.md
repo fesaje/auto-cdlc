@@ -204,9 +204,13 @@ Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Command
   arreglo. Al seleccionar una ves su informe. Teclas: **e** retocar (tono, púa, velocidad… ver abajo),
   **b** volver a compilar el `.psarc`, **o** abrir su carpeta, **c** oír los clics, **a** oír el A/B,
   **r** recargar.
-- **Tanda**: las canciones de `input` (marcadas las ya procesadas). Marca las que quieras, elige dificultad
-  inicial, arreglo simplificado, tono, púa y si envías resultados, y pulsa **Empezar**. El progreso sale
-  debajo. Es lo mismo que `process.bat`, sin las preguntas.
+- **Tanda**: las canciones de `input` y sus subcarpetas, agrupadas por artista y álbum (de las etiquetas),
+  cada una como nueva, procesada, falló antes o sin bajo. Las nuevas salen marcadas. **Espacio** marca la
+  línea del cursor (un disco o un artista entero de una vez); **Todas**, **Ninguna**, **Solo nuevas** e
+  **Invertir** (teclas t, n, v, i) actúan sobre la lista. Una canción ya procesada que marques se repite.
+  Elige las opciones de la derecha, mira el resumen de abajo y pulsa **Empezar**: a la derecha sale el
+  progreso, y cada canción acaba como hecha (fiable o para revisar), error o sin bajo. **Ver en Canciones**
+  abre la pestaña Canciones solo con esa tanda. Es lo mismo que `process.bat`, sin las preguntas.
 - **Ajustes**: todas las opciones de `config.txt` con una explicación corta. **Guardar** las escribe en el
   archivo.
 
