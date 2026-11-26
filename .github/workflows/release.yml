@@ -1,0 +1,59 @@
+# Publishes a release when release-notes/vX.Y.Z.md arrives on main, X.Y.Z being VERSION in auto_cdlc.py.
+# It builds auto-cdlc-X.Y.Z-windows.zip (the code, as git archive gives it, plus tools/cdlc-pack taken from
+# the latest release's cdlc-pack-win-x64.zip) and attaches both zips.
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: ["release-notes/*.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and notes
+        id: v
+        run: |
+          VER=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' auto_cdlc.py)
+          NOTES="release-notes/v$VER.md"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
+          if [ ! -f "$NOTES" ]; then
+            echo "No $NOTES: nothing to publish."; echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            echo "v$VER is already published."; echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          grep -q '^## Español' "$NOTES" || { echo "$NOTES needs a '## Español' section (the updater reads it)"; exit 1; }
+
+      - name: Build the zips
+        if: steps.v.outputs.skip != '1'
+        run: |
+          VER=${{ steps.v.outputs.version }}
+          mkdir -p dist work
+          gh release download --pattern cdlc-pack-win-x64.zip --dir dist
+          git archive --prefix=auto-cdlc/ HEAD | tar -x -C work
+          mkdir -p work/auto-cdlc/tools/cdlc-pack
+          unzip -q -o dist/cdlc-pack-win-x64.zip -d work/auto-cdlc/tools/cdlc-pack
+          test -f work/auto-cdlc/tools/cdlc-pack/cdlc-pack.exe
+          (cd work && zip -qr -X "../dist/auto-cdlc-$VER-windows.zip" auto-cdlc)
+          ls -la dist
+
+      - name: Publish
+        if: steps.v.outputs.skip != '1'
+        run: |
+          VER=${{ steps.v.outputs.version }}
+          gh release create "v$VER" --title "v$VER" --notes-file "${{ steps.v.outputs.notes }}" \
+            --target "$GITHUB_SHA" --latest \
+            "dist/auto-cdlc-$VER-windows.zip" dist/cdlc-pack-win-x64.zip

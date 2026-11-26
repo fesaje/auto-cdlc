@@ -3,3 +3,5 @@
 templates/*.txt text eol=crlf
 *.whl binary
 desarrollo/ export-ignore
+.github/ export-ignore
+release-notes/ export-ignore
