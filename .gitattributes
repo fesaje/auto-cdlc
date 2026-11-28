@@ -5,3 +5,4 @@ templates/*.txt text eol=crlf
 desarrollo/ export-ignore
 .github/ export-ignore
 release-notes/ export-ignore
+docs/img/ export-ignore

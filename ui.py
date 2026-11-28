@@ -128,6 +128,8 @@ def coincide(f, palabras):
 CARPETAS_HECHAS = {"processed", "discarded", "procesadas", "descartadas"}   # mover_entradas() puts them there
 ESTADOS = {"nueva": ("nueva", "new"), "procesada": ("procesada", "processed"),
            "fallo": ("falló antes", "failed before"), "sin_bajo": ("sin bajo", "no bass")}
+ESTADOS_PLURAL = {"nueva": ("nuevas", "new"), "procesada": ("procesadas", "processed"),
+                  "fallo": ("fallaron antes", "failed before"), "sin_bajo": ("sin bajo", "no bass")}
 
 
 def archivos_input():
@@ -656,7 +658,7 @@ class AutoCdlc(App):
                     nb = na.add("", data={"grupo": items, "nombre": album}, expand=True)
                     for it in items:
                         it["nodo"] = nb.add_leaf("", data={"item": it})
-        caja = lambda m: "[b]\\[x][/b]\u00a0" if m is True else "\\[-]\u00a0" if m is None else "\\[ ]\u00a0"
+        caja = lambda m: "\\[x] " if m is True else "\\[-] " if m is None else "\\[ ] "
         def pintar(nodo):
             d = nodo.data or {}
             if "item" in d:
@@ -678,7 +680,7 @@ class AutoCdlc(App):
         n = {k: sum(1 for i in self.items if i["estado"] == k) for k in ESTADOS}
         self.query_one("#tanda-cabecera", Label).update(
             T("[b]CANCIONES EN INPUT[/b]\u00a0 ", "[b]SONGS IN INPUT[/b]\u00a0 ") + f"({len(self.items)} · " +
-            ", ".join(f"{v} {T(*ESTADOS[k])}" for k, v in n.items() if v) + ")")
+            ", ".join(f"{v} {T(*(ESTADOS if v == 1 else ESTADOS_PLURAL)[k])}" for k, v in n.items() if v) + ")")
         if self.proceso is not None or self.terminada:
             return
         if not self.items:

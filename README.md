@@ -1,119 +1,133 @@
-# auto-cdlc
+<div align="center">
 
-**English** | [Español](README.es.md)
+# 🎸 auto-cdlc
 
-**Turn your mp3s into bass CDLC for Rocksmith 2014: on your own PC, for free.**
+**Turn your mp3s into bass CDLC for Rocksmith 2014, on your own PC, for free.**
 
-Put your songs in a folder, run `process.bat` and get `.psarc` files ready to play bass in Rocksmith 2014
-Remastered. Each song comes with:
+[![Latest release](https://img.shields.io/github/v/release/fesaje/auto-cdlc?label=release&color=2ea44f)](https://github.com/fesaje/auto-cdlc/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/fesaje/auto-cdlc/total?color=blue)](https://github.com/fesaje/auto-cdlc/releases)
+[![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)](docs/en/installation.md)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
 
-- the **bass tab**, with **dynamic difficulty** (DD) like official songs,
-- a **second, simplified arrangement** to warm up with,
-- the **amp tone** (the official one when the artist has DLC),
-- **on-screen lyrics** and **album art**, when available.
+**English** · [Español](README.es.md)
 
+[**⬇ Download the latest version**](https://github.com/fesaje/auto-cdlc/releases/latest) ·
+[Installation](docs/en/installation.md) · [FAQ](docs/en/faq.md) · [Changelog](CHANGELOG.md)
+
+<img src="docs/img/songs-en.png" alt="auto-cdlc interface: the processed songs, by artist and album, with the report of the selected one" width="900">
+
+</div>
+
+Put your songs in a folder, run it and get `.psarc` files ready to play bass in Rocksmith 2014 Remastered.
 Everything runs locally with open-source models: no accounts, no per-song fees, and your music is never
 uploaded anywhere.
 
-> English and Spanish interface. It checks for new versions and updates itself.
+## ✨ What you get
 
----
-
-## Why
-
-I play bass with Rocksmith and kept finding very few songs in Spanish on the usual CDLC sites, so I built
-a tool to chart the songs nobody else has charted. It's meant for **personal practice**, and also as a
-**starting point** for anyone who wants to polish a chart by hand.
-
-## What it does
-
-| Step | How |
+|  |  |
 |---|---|
-| Separates the bass from the rest of the mix | MDX model *kuielab_b_bass* (audio-separator) |
-| Finds the beat, the downbeat and the time signature (4/4, 3/4 and odd bars) | madmom + Beat This!, checked against the bass line |
-| Transcribes the notes, including repeated ones | librosa + pYIN + CREPE |
-| Picks the tuning (E, Eb, Drop D, D… down to B) and the fingering | dynamic programming that minimises hand movement |
-| Dynamic difficulty similar to official songs | up to 10 levels per phrase; repeated phrases share progress |
-| Simplified arrangement ("Alt. Bass") | one note per beat, half bar or bar: your choice |
-| Bass tone | the official one if the song or artist has official DLC; otherwise the one you choose per album |
-| Lyrics, album art, album and year | LRCLIB; mp3 tags, iTunes or Deezer |
-| Builds the `.psarc` without opening DLC Builder | `cdlc-pack`, built on DLC Builder's libraries |
+| 🎼 **Bass tab** with **dynamic difficulty**, up to 10 levels per phrase, like official songs | 🐢 A **simplified arrangement** ("Alt. Bass") to warm up: one note per bar, half bar, beat or eighth |
+| 🎛️ The **amp tone**: the official one when the artist has DLC, or the one you choose per album | 🎤 **On-screen lyrics**, **album art**, album and year, when they can be found |
+| 🎚️ The **tuning** (E, Eb, Drop D, D… down to B) and a **fingering** that keeps your hand still | 📦 A ready **`.psarc`**, built without opening DLC Builder, straight into Rocksmith's `dlc` folder |
+| 🖥️ A **text interface** to browse your songs, launch batches and change settings | ✏️ **Retouch in seconds** (tone, pick, scroll speed, difficulty) without analysing again |
+| ✅ A **reliability rating** for every song, and the ones worth checking listed apart | 🔄 **Self-updating**, in English and Spanish |
 
-It works in **batches**. Before starting, it groups what's pending by artist and album and asks only what
-it needs (starting difficulty, tone and pick for each album). Then it runs unattended, overnight if you
-like: about **3–4 minutes per song** on a regular PC. At the end you get a summary with a **reliability
-rating** for every song and a list of the ones worth checking.
+## 🚀 Quick start
 
-## Getting started
+1. **Install Wwise** (2019 to 2023: it converts the audio) and the **CDLC Enabler** (lets the game load
+   custom songs). [Step by step](docs/en/installation.md).
+2. **Download** `auto-cdlc-…-windows.zip` from the [latest release](https://github.com/fesaje/auto-cdlc/releases/latest),
+   unzip it and run **`install.bat`**. It finds your Rocksmith installs and asks where the songs should go.
+3. **Put your mp3s** in `input` and run **`auto-cdlc.bat`** (the interface) or **`process.bat`** (straight
+   away, asking a few questions).
 
-1. Install **Wwise** (converts audio to Rocksmith's format) and the **CDLC Enabler** (lets the game load
-   custom songs).
-2. Download `auto-cdlc-…-windows.zip` from the
-   [latest release](https://github.com/fesaje/auto-cdlc/releases/latest), unzip it and run
-   **`install.bat`**.
-3. Put your songs in `input` and run **`process.bat`**.
+It works in **batches**: it groups the songs by artist and album, asks only what it needs and then runs
+unattended, overnight if you like. About **3–4 minutes per song** on a regular PC, no graphics card needed.
 
-Step by step in **[docs/en/installation.md](docs/en/installation.md)**. Quick answers in the
-**[FAQ](docs/en/faq.md)**.
+<div align="center">
+<img src="docs/img/batch-en.png" alt="The Batch screen: songs grouped by artist and album with tick boxes, batch options and a summary" width="900">
+</div>
 
-## Checking and polishing a song
+## ⚙️ How it works
+
+```mermaid
+flowchart LR
+    A[mp3] --> B[Bass separation<br/>MDX / Demucs]
+    A --> C[Beat, downbeat<br/>and bars<br/>madmom + Beat This!]
+    B --> D[Notes<br/>pYIN + CREPE]
+    C --> E[Quantising to<br/>the beat grid]
+    D --> E
+    E --> F[Tuning, fingering<br/>and difficulty levels]
+    F --> G[.psarc<br/>cdlc-pack]
+    A -.-> H[Lyrics, album art,<br/>official tone]
+    H -.-> G
+```
+
+The details, for the curious and for contributors, are in [How it works](docs/en/how-it-works.md).
+
+## 🔍 Checking and polishing a song
 
 Each song gets its own folder in `output` with everything used to build it:
 
 - **`_AB.mp3`**: with headphones, the real bass on the left and the tab on the right. Wrong notes stand out.
 - **`_clics.mp3`**: a click on every beat, higher on beat 1, to check the bars.
 - **`.gp5`**, **`.svl`**, the arrangement **XMLs** and a **DLC Builder project**: open them in Guitar Pro,
-  TuxGuitar, Editor on Fire or DLC Builder and fix what you need.
+  TuxGuitar, Editor on Fire or DLC Builder and fix what you need. Then rebuild the `.psarc` without
+  analysing again: `process.bat --rebuild "output\Artist - Title"`.
 
-To change tone, pick or scroll speed in seconds, or to browse your songs and launch batches, run
-**`auto-cdlc.bat`**: a text interface with songs, batch and settings tabs
-([details](docs/en/usage.md#the-interface-auto-cdlcbat)).
+It's a good **starting point for charting a song by hand**: the beat map and the notes are already there.
 
-After editing, rebuild the `.psarc` without analysing the audio again:
+## 📚 Documentation
 
-```
-process.bat --rebuild "output\Artist - Title"
-```
+| | |
+|---|---|
+| **[Installation](docs/en/installation.md)** | Requirements, Wwise, CDLC Enabler, installer and first test |
+| **[FAQ](docs/en/faq.md)** | Using it, checking a song, editing and rebuilding, common problems |
+| **[Usage](docs/en/usage.md)** | The interface, the batch questions, the output, every option in `config.txt` |
+| **[How it works](docs/en/how-it-works.md)** | The pipeline in detail |
+| **[Changelog](CHANGELOG.md)** · **[Third-party software](THIRD_PARTY.md)** | |
 
-## Documentation
-
-- **[Installation](docs/en/installation.md)**: requirements, Wwise, CDLC Enabler, installer and first
-  test.
-- **[FAQ](docs/en/faq.md)**: how to use it, checking a song, editing and rebuilding, common problems.
-- **[Usage](docs/en/usage.md)**: the batch questions, the output, every option in `config.txt`.
-- **[How it works](docs/en/how-it-works.md)**: the pipeline in detail, for the curious and for
-  contributors.
-- **[Changelog](CHANGELOG.md)** · **[Third-party software and licences](THIRD_PARTY.md)**.
-
-## Limitations
+## ⚠️ Limitations
 
 - **Windows** only (10/11, 64-bit), **4-string bass** only.
-- It's an **automatic transcription**: clear, simple basslines come out very playable; busy, syncopated or
-  muddy ones will have extra, missing or misplaced notes. Compound meters (6/8, 12/8) and swing are not
-  handled well yet.
-- Techniques are not detected: slides, hammer-ons, slap and harmonics come out as plain notes.
-- It can't tell whether the bass is distorted: the tone is chosen per album or taken from official DLC.
+- It's an **automatic transcription**: clear basslines come out very playable; busy, syncopated or muddy
+  ones will have extra, missing or misplaced notes. Swing and compound meters (6/8, 12/8) aren't handled
+  well yet.
+- Techniques aren't detected: slides, hammer-ons, slap and harmonics come out as plain notes.
 
-## Helping improve it
+## 💡 Why
 
-When you process a batch, it asks whether to send an **anonymous report** for each song: the diagnostics
-and the generated tab, never the audio, the lyrics or your folders. It's optional
-(`send_results = no` turns it off for good) and it's how the transcription gets better.
+I play bass with Rocksmith and kept finding very few songs in Spanish on the usual CDLC sites, so I built
+a tool to chart the songs nobody else has charted. It's meant for **personal practice**.
 
-Found a bug or a song that comes out badly? Open an [issue](https://github.com/fesaje/auto-cdlc/issues)
-and attach the **batch log** (`output\log_….txt`). English or Spanish, both welcome.
+## 🤝 Helping improve it
 
-## Legal notice
+When you process a batch, you can send an **anonymous report** for each song: the diagnostics and the
+generated tab, never the audio, the lyrics or your folders. It's optional (`send_results = no` turns it
+off) and it's how the transcription gets better.
 
-auto-cdlc does not include or download any music. It's meant for making CDLC **for personal use** from
-songs you already own. Don't upload the generated charts as they are to CDLC sites, and don't share CDLC
-of copyrighted songs without permission, especially songs that exist as official DLC.
+Found a bug or a song that comes out badly? Open an [issue](https://github.com/fesaje/auto-cdlc/issues) and
+attach the **batch log** (`output\log_….txt`). English or Spanish, both welcome.
 
-Rocksmith is a trademark of Ubisoft. This project is not affiliated with Ubisoft or CustomsForge.
+## 🙏 Built on
 
-madmom's models are licensed CC BY-NC-SA, so the program as a whole may only be used
-**non-commercially**. Details in [THIRD_PARTY.md](THIRD_PARTY.md).
+[Rocksmith2014.NET / DLC Builder](https://github.com/iminashi/Rocksmith2014.NET) ·
+[audio-separator](https://github.com/nomadkaraoke/python-audio-separator) ·
+[Demucs](https://github.com/facebookresearch/demucs) ·
+[madmom](https://github.com/CPJKU/madmom) ·
+[Beat This!](https://github.com/CPJKU/beat_this) ·
+[librosa](https://github.com/librosa/librosa) ·
+[torchcrepe](https://github.com/maxrmorrison/torchcrepe) ·
+[LRCLIB](https://lrclib.net) ·
+[Textual](https://github.com/Textualize/textual). Full list and licences in [THIRD_PARTY.md](THIRD_PARTY.md).
 
-## Licence
+## ⚖️ Legal notice and licence
 
-Code under the [MIT](LICENSE) licence. Third-party software keeps its own licences.
+auto-cdlc doesn't include or download any music. It's meant for making CDLC **for personal use** from songs
+you already own. Don't upload the generated charts as they are to CDLC sites, and don't share CDLC of
+copyrighted songs without permission, especially songs that exist as official DLC.
+
+Rocksmith is a trademark of Ubisoft. This project isn't affiliated with Ubisoft or CustomsForge.
+
+Code under the [MIT](LICENSE) licence. madmom's models are licensed CC BY-NC-SA, so the program as a whole
+may only be used **non-commercially**. Third-party software keeps its own licences.
