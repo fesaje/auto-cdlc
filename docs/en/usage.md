@@ -205,7 +205,8 @@ It works with the mouse or the keyboard and has three tabs:
 - **Batch**: the songs in `input` and its subfolders, grouped by artist and album (from the tags), each
   marked new, processed, failed before or no bass. New ones come ticked. **Space** ticks the line under the
   cursor (a whole album or artist at once); **All**, **None**, **Only new** and **Invert** (keys t, n, v,
-  i) act on the list. A ticked song that was already processed is done again. Choose the options on the
+  i) act on the songs shown. The filter box (key /) narrows the list by artist, album or title, and
+  **Only ticked** (key m) hides the unticked ones; while a batch runs, only its songs are shown. A ticked song that was already processed is done again. Choose the options on the
   right, check the summary at the bottom and press **Start**: the right side then shows the progress, and
   each song ends as done (reliable or worth checking), error or no bass. **Show in Songs** opens the
   Songs tab with just that batch. It's the same as `process.bat`, without the questions.

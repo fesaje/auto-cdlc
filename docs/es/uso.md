@@ -207,7 +207,9 @@ Desde la 0.5.1 hay también una interfaz de texto, al estilo de Midnight Command
 - **Tanda**: las canciones de `input` y sus subcarpetas, agrupadas por artista y álbum (de las etiquetas),
   cada una como nueva, procesada, falló antes o sin bajo. Las nuevas salen marcadas. **Espacio** marca la
   línea del cursor (un disco o un artista entero de una vez); **Todas**, **Ninguna**, **Solo nuevas** e
-  **Invertir** (teclas t, n, v, i) actúan sobre la lista. Una canción ya procesada que marques se repite.
+  **Invertir** (teclas t, n, v, i) actúan sobre las que se ven. El filtro (tecla /) reduce la lista por
+  artista, álbum o título, y **Solo marcadas** (tecla m) esconde las no marcadas; mientras corre una tanda
+  solo se ven las suyas. Una canción ya procesada que marques se repite.
   Elige las opciones de la derecha, mira el resumen de abajo y pulsa **Empezar**: a la derecha sale el
   progreso, y cada canción acaba como hecha (fiable o para revisar), error o sin bajo. **Ver en Canciones**
   abre la pestaña Canciones solo con esa tanda. Es lo mismo que `process.bat`, sin las preguntas.

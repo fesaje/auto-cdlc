@@ -7,6 +7,8 @@ Up to 0.2.9.1 the project was called **cdlc-bajo** and its versions were numbere
 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 and 0.2.9.1. Those before 0.2.9.1 only contain the text
 files: code, configuration, README and installers.
 
+- **0.5.6**: Batch screen: a filter box (key `/`) and an **Only ticked** view (key `m`); All / None / Only
+  new / Invert act on the songs shown, and while a batch runs only its songs are listed.
 - **0.5.5**: new Batch screen in the interface: songs from `input` and its subfolders grouped by artist and
   album, tick boxes (one song, a whole album or artist; all, none, only new, invert), a summary of what will
   be processed, and live progress with how each song ended. Ticking a processed song redoes it (the

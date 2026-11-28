@@ -158,6 +158,7 @@ class ArbolTanda(Tree):
         Binding("n", "app.marcar_ninguna", T("Ninguna", "None")),
         Binding("v", "app.marcar_nuevas", T("Solo nuevas", "Only new")),
         Binding("i", "app.marcar_invertir", T("Invertir", "Invert")),
+        Binding("m", "app.ver_marcadas", T("Ver solo marcadas", "Show only ticked")),
     ]
 
     def action_marcar(self):
@@ -311,6 +312,10 @@ class AutoCdlc(App):
     #tanda-botones { height: auto; margin: 1 0 0 0; }
     #tanda-botones Button { margin-right: 1; }
     #arbol { height: 1fr; margin-top: 1; }
+    #tanda-ver { height: auto; margin-top: 1; }
+    #tanda-filtro { width: 1fr; }
+    #m-ver-marcadas { margin-left: 1; }
+    #m-ver-marcadas.activo { background: $accent; color: $text; }
     #tanda-derecha { width: 2fr; border-left: solid $primary; padding: 0 1; }
     #tanda-opciones Label { margin-top: 1; }
     #tanda-opciones Select, #tanda-opciones Input { width: 100%; }
@@ -357,6 +362,7 @@ class AutoCdlc(App):
         self.proceso = None
         self.items, self.filtro_tanda, self.actual, self.tanda, self.hechas_tanda = [], None, None, {}, []
         self.terminada = False
+        self.solo_marcadas = False
         c.log = self._log_hilo           # messages from auto_cdlc go to the log panel, not to the terminal
         self.sub_title = f"{c.VERSION}"
 
@@ -384,6 +390,11 @@ class AutoCdlc(App):
                                 yield Button(T("Ninguna", "None"), id="m-ninguna", compact=True)
                                 yield Button(T("Solo nuevas", "Only new"), id="m-nuevas", compact=True)
                                 yield Button(T("Invertir", "Invert"), id="m-invertir", compact=True)
+                            with Horizontal(id="tanda-ver"):
+                                yield Input(placeholder=T("Filtrar: artista, álbum, canción…  (tecla /)",
+                                                          "Filter: artist, album, song…  (key /)"), id="tanda-filtro",
+                                            compact=True)
+                                yield Button(T("Solo marcadas", "Only ticked"), id="m-ver-marcadas", compact=True)
                             yield ArbolTanda("input", id="arbol")
                         with ContentSwitcher(initial="tanda-opciones", id="tanda-derecha"):
                             with VerticalScroll(id="tanda-opciones"):
@@ -529,6 +540,9 @@ class AutoCdlc(App):
         self.query_one("#tabla", DataTable).focus()
 
     def action_filtrar(self):
+        if self.query_one("TabbedContent").active == "tab-tanda":
+            self.query_one("#tanda-filtro", Input).focus()
+            return
         self.query_one("TabbedContent").active = "tab-canciones"
         self.query_one("#filtro", Input).focus()
 
@@ -646,10 +660,12 @@ class AutoCdlc(App):
     def pintar_arbol(self, reconstruir=False):
         arbol = self.query_one("#arbol", ArbolTanda)
         if reconstruir:
+            antes = arbol.cursor_node.data if arbol.cursor_node is not None and arbol.cursor_node.data else {}
+            antes = antes.get("item") or (antes.get("grupo") or [None])[0]
             arbol.clear()
             arbol.show_root = False
             grupos = {}
-            for it in sorted(self.items, key=lambda x: (normal(x["artista"]), normal(x["album"]), normal(x["titulo"]))):
+            for it in sorted(self.visibles(), key=lambda x: (normal(x["artista"]), normal(x["album"]), normal(x["titulo"]))):
                 grupos.setdefault(it["artista"], {}).setdefault(it["album"], []).append(it)
             for artista, albumes in grupos.items():
                 na = arbol.root.add("", data={"grupo": [i for l in albumes.values() for i in l]}, expand=True)
@@ -658,6 +674,8 @@ class AutoCdlc(App):
                     nb = na.add("", data={"grupo": items, "nombre": album}, expand=True)
                     for it in items:
                         it["nodo"] = nb.add_leaf("", data={"item": it})
+            if antes is not None and antes.get("nodo") is not None and antes in self.visibles():
+                self.call_after_refresh(arbol.move_cursor, antes["nodo"])
         caja = lambda m: "\\[x] " if m is True else "\\[-] " if m is None else "\\[ ] "
         def pintar(nodo):
             d = nodo.data or {}
@@ -680,7 +698,9 @@ class AutoCdlc(App):
         n = {k: sum(1 for i in self.items if i["estado"] == k) for k in ESTADOS}
         self.query_one("#tanda-cabecera", Label).update(
             T("[b]CANCIONES EN INPUT[/b]\u00a0 ", "[b]SONGS IN INPUT[/b]\u00a0 ") + f"({len(self.items)} · " +
-            ", ".join(f"{v} {T(*(ESTADOS if v == 1 else ESTADOS_PLURAL)[k])}" for k, v in n.items() if v) + ")")
+            ", ".join(f"{v} {T(*(ESTADOS if v == 1 else ESTADOS_PLURAL)[k])}" for k, v in n.items() if v) + ")" +
+            (T(f"  · se ven {len(self.visibles())}", f"  · showing {len(self.visibles())}")
+             if len(self.visibles()) != len(self.items) else ""))
         if self.proceso is not None or self.terminada:
             return
         if not self.items:
@@ -711,13 +731,38 @@ class AutoCdlc(App):
             nuevo = not all(i["marcada"] for i in d["grupo"])
             for i in d["grupo"]:
                 i["marcada"] = nuevo
-        self.pintar_arbol()
+        self.pintar_arbol(reconstruir=self.solo_marcadas)
+
+    def visibles(self):
+        """Songs the tree shows: those matching the batch filter and, with "Only ticked" on, the ticked ones."""
+        palabras = normal(self.query_one("#tanda-filtro", Input).value).split()
+        return [i for i in self.items
+                if (not self.solo_marcadas or i["marcada"])
+                and all(p in normal(f"{i['artista']} {i['album']} {i['titulo']}") for p in palabras)]
 
     def _marcar(self, regla):
+        """All / None / Only new / Invert: they act on the songs shown (all of them when nothing filters)."""
         if self.proceso is None and not self.terminada:
-            for i in self.items:
+            for i in self.visibles():
                 i["marcada"] = regla(i)
-            self.pintar_arbol()
+            self.pintar_arbol(reconstruir=self.solo_marcadas)
+
+    def action_ver_marcadas(self):
+        self.solo_marcadas = not self.solo_marcadas
+        self.query_one("#m-ver-marcadas", Button).set_class(self.solo_marcadas, "activo")
+        self.pintar_arbol(reconstruir=True)
+
+    @on(Button.Pressed, "#m-ver-marcadas")
+    def _b_ver_marcadas(self):
+        self.action_ver_marcadas()
+
+    @on(Input.Changed, "#tanda-filtro")
+    def _tanda_filtro(self, ev):
+        self.pintar_arbol(reconstruir=True)
+
+    @on(Input.Submitted, "#tanda-filtro")
+    def _tanda_filtro_hecho(self, ev):
+        self.query_one("#arbol", ArbolTanda).focus()
 
     def action_marcar_todas(self):
         self._marcar(lambda i: True)
@@ -788,10 +833,13 @@ class AutoCdlc(App):
         self.query_one("#t-ver", Button).disabled = True
         self.query_one("#tanda-log", RichLog).clear()
         self.proceso = True                 # set before the thread starts: the list is locked from now on
+        self.query_one("#tanda-filtro", Input).value = ""
+        self.solo_marcadas = True           # while it runs, the tree shows just this batch
+        self.query_one("#m-ver-marcadas", Button).set_class(True, "activo")
         self.query_one("#tanda-resumen", Label).update(
             T(f"Procesando {len(marcadas)} " + ("canción…" if len(marcadas) == 1 else "canciones…"),
               f"Processing {len(marcadas)} " + ("song…" if len(marcadas) == 1 else "songs…")))
-        self.pintar_arbol()
+        self.pintar_arbol(reconstruir=True)
         self.lanzar(orden)
 
     def _linea_tanda(self, linea):
@@ -880,6 +928,8 @@ class AutoCdlc(App):
 
     def volver_a_opciones(self):
         self.terminada = False
+        self.solo_marcadas = False
+        self.query_one("#m-ver-marcadas", Button).set_class(False, "activo")
         self.query_one("#t-empezar", Button).label = T("▶ Empezar", "▶ Start")
         self.query_one("#tanda-derecha", ContentSwitcher).current = "tanda-opciones"
         self.query_one("#t-ver", Button).disabled = True

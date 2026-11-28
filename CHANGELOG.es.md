@@ -7,6 +7,9 @@ Hasta la 0.2.9.1 el proyecto se llamaba **cdlc-bajo** y sus versiones iban numer
 0.1.3.1, 0.2.3, 0.2.3.2, 0.2.4, 0.2.5, 0.2.5.1, 0.2.5.2, 0.2.7, 0.2.8.1, 0.2.9 y 0.2.9.1. Las de antes de la
 0.2.9.1 solo tienen los archivos de texto: código, configuración, LEEME e instaladores.
 
+- **0.5.6**: pantalla de Tanda: un filtro (tecla `/`) y una vista **Solo marcadas** (tecla `m`); Todas /
+  Ninguna / Solo nuevas / Invertir actúan sobre las que se ven, y mientras corre una tanda solo salen sus
+  canciones.
 - **0.5.5**: pantalla de Tanda nueva en la interfaz: canciones de `input` y sus subcarpetas agrupadas por
   artista y álbum, casillas (una canción, un disco o un artista entero; todas, ninguna, solo nuevas,
   invertir), resumen de lo que se va a procesar y progreso en directo con cómo acaba cada canción. Marcar
