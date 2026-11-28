@@ -46,7 +46,8 @@ def abrir(ruta):
         if os.name == "nt":
             os.startfile(str(ruta))                                  # noqa: S606
         else:
-            subprocess.Popen(["xdg-open", str(ruta)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(ruta)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -458,7 +459,7 @@ class AutoCdlc(App):
                             "se reescribirán solo los proyectos.[/yellow]",
                             "[yellow]Warning: .psarc files can't be built (cdlc-pack missing or disabled); "
                             "only the projects will be rewritten.[/yellow]"))
-        elif os.name == "nt" and not c.WWISE:
+        elif c.COMPILAR and not c.WWISE:
             self.escribir(T("[yellow]Aviso: no encuentro Wwise; no se podrán crear .psarc.[/yellow]",
                             "[yellow]Warning: Wwise not found; .psarc files can't be built.[/yellow]"))
 

@@ -1,6 +1,6 @@
 # Publishes a release when release-notes/vX.Y.Z.md arrives on main, X.Y.Z being VERSION in auto_cdlc.py.
-# It builds auto-cdlc-X.Y.Z-windows.zip (the code, as git archive gives it, plus tools/cdlc-pack taken from
-# the latest release's cdlc-pack-win-x64.zip) and attaches both zips.
+# It builds auto-cdlc-X.Y.Z-windows / -linux / -mac.zip (the code, as git archive gives it, plus that system's
+# cdlc-pack from the cdlc-pack-bin pre-release, see cdlc-pack.yml) and attaches them with the cdlc-pack zips.
 name: release
 
 on:
@@ -41,13 +41,32 @@ jobs:
         if: steps.v.outputs.skip != '1'
         run: |
           VER=${{ steps.v.outputs.version }}
-          mkdir -p dist work
-          gh release download --pattern cdlc-pack-win-x64.zip --dir dist
-          git archive --prefix=auto-cdlc/ HEAD | tar -x -C work
-          mkdir -p work/auto-cdlc/tools/cdlc-pack
-          unzip -q -o dist/cdlc-pack-win-x64.zip -d work/auto-cdlc/tools/cdlc-pack
-          test -f work/auto-cdlc/tools/cdlc-pack/cdlc-pack.exe
-          (cd work && zip -qr -X "../dist/auto-cdlc-$VER-windows.zip" auto-cdlc)
+          mkdir -p dist packs
+          # cdlc-pack for each system, from the pre-release cdlc-pack.yml keeps up to date; if it isn't there
+          # yet, at least the Windows one from the latest release
+          gh release download cdlc-pack-bin --pattern 'cdlc-pack-*.zip' --dir packs || \
+            gh release download --pattern cdlc-pack-win-x64.zip --dir packs
+          ls -la packs
+          for sistema in windows:win-x64 linux:linux-x64 mac:osx-arm64; do
+            nombre=${sistema%%:*}; rid=${sistema##*:}
+            [ -f "packs/cdlc-pack-$rid.zip" ] || { echo "no cdlc-pack for $rid: no $nombre zip"; continue; }
+            rm -rf work && mkdir work
+            git archive --prefix=auto-cdlc/ HEAD | tar -x -C work
+            mkdir -p work/auto-cdlc/tools/cdlc-pack
+            unzip -q -o "packs/cdlc-pack-$rid.zip" -d work/auto-cdlc/tools/cdlc-pack
+            if [ "$nombre" = "windows" ]; then
+              test -f work/auto-cdlc/tools/cdlc-pack/cdlc-pack.exe
+              rm -f work/auto-cdlc/*.sh work/auto-cdlc/*.command
+            else
+              test -f work/auto-cdlc/tools/cdlc-pack/cdlc-pack
+              chmod +x work/auto-cdlc/*.sh work/auto-cdlc/*.command work/auto-cdlc/tools/cdlc-pack/cdlc-pack
+              rm -f work/auto-cdlc/*.bat
+              [ "$nombre" = "linux" ] && rm -f work/auto-cdlc/*.command
+            fi
+            (cd work && zip -qry "../dist/auto-cdlc-$VER-$nombre.zip" auto-cdlc)
+          done
+          cp packs/cdlc-pack-*.zip dist/
+          test -f "dist/auto-cdlc-$VER-windows.zip"
           ls -la dist
 
       - name: Publish
@@ -57,5 +76,4 @@ jobs:
           # optional first line in the notes: <!-- title: Batch screen -->  ->  "v0.5.5 – Batch screen"
           TITULO=$(sed -n '1s/^<!-- *title: *\(.*[^ ]\) *-->$/\1/p' "${{ steps.v.outputs.notes }}")
           gh release create "v$VER" --title "v$VER${TITULO:+ – $TITULO}" --notes-file "${{ steps.v.outputs.notes }}" \
-            --target "$GITHUB_SHA" --latest \
-            "dist/auto-cdlc-$VER-windows.zip" dist/cdlc-pack-win-x64.zip
+            --target "$GITHUB_SHA" --latest dist/*.zip

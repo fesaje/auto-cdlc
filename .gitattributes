@@ -6,3 +6,5 @@ desarrollo/ export-ignore
 .github/ export-ignore
 release-notes/ export-ignore
 docs/img/ export-ignore
+*.sh text eol=lf
+*.command text eol=lf

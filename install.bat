@@ -25,24 +25,42 @@ echo  %M_TITLE%
 echo ============================================================
 echo.
 
+rem Install log: what each step did. At the end it can be sent (anonymously, if the user agrees) so
+rem problems on other PCs can be seen. informe.py only uses the standard library.
+set "AUTO_CDLC_INSTALL_LOG=%~dp0install_log.txt"
+echo auto-cdlc install %DATE% %TIME% > "%AUTO_CDLC_INSTALL_LOG%"
+ver >> "%AUTO_CDLC_INSTALL_LOG%"
+
 rem 1. uv
 where uv >nul 2>nul
 if not errorlevel 1 goto uv_ok
 echo %M_UV1%
 powershell -NoProfile -ExecutionPolicy ByPass -Command "irm https://astral.sh/uv/install.ps1 | iex"
-if errorlevel 1 goto error
+if errorlevel 1 (
+    echo [1/4] uv: install failed >> "%AUTO_CDLC_INSTALL_LOG%"
+    goto error
+)
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+echo [1/4] uv: installed now >> "%AUTO_CDLC_INSTALL_LOG%"
 goto uv_done
 :uv_ok
 echo %M_UV2%
+echo [1/4] uv: already there >> "%AUTO_CDLC_INSTALL_LOG%"
 :uv_done
+uv --version >> "%AUTO_CDLC_INSTALL_LOG%" 2>&1
 
 rem 2. Python and libraries
 echo.
 echo %M_PY1%
 echo %M_PY2%
 uv sync --frozen
-if errorlevel 1 goto error
+if not errorlevel 1 goto sync_ok
+rem failed: run it again quietly to keep the error in the log (it fails fast the second time)
+echo [2/4] uv sync: FAILED, details: >> "%AUTO_CDLC_INSTALL_LOG%"
+uv sync --frozen --color never >> "%AUTO_CDLC_INSTALL_LOG%" 2>&1
+goto error
+:sync_ok
+echo [2/4] uv sync: ok >> "%AUTO_CDLC_INSTALL_LOG%"
 
 rem 3. cdlc-pack (also picked up from the old "herramientas" folder)
 echo.
@@ -50,13 +68,18 @@ if exist "tools\cdlc-pack\cdlc-pack.exe" goto pack_present
 if exist "herramientas\cdlc-pack\cdlc-pack.exe" goto pack_present
 echo %M_PACK2%
 powershell -NoProfile -ExecutionPolicy ByPass -Command "$ErrorActionPreference='Stop'; $z=Join-Path $env:TEMP 'cdlc-pack-win-x64.zip'; Invoke-WebRequest -UseBasicParsing 'https://github.com/fesaje/auto-cdlc/releases/latest/download/cdlc-pack-win-x64.zip' -OutFile $z; Expand-Archive -Force $z 'tools\cdlc-pack'; Remove-Item $z"
-if not errorlevel 1 goto pack_done
+if not errorlevel 1 goto pack_downloaded
+echo [3/4] cdlc-pack: download FAILED >> "%AUTO_CDLC_INSTALL_LOG%"
 echo %M_PACK3%
 echo %M_PACK4%
 echo %M_PACK5%
 goto pack_done
+:pack_downloaded
+echo [3/4] cdlc-pack: downloaded >> "%AUTO_CDLC_INSTALL_LOG%"
+goto pack_done
 :pack_present
 echo %M_PACK1%
+echo [3/4] cdlc-pack: already there >> "%AUTO_CDLC_INSTALL_LOG%"
 :pack_done
 
 rem 4. Configuration, Wwise and Rocksmith's dlc folder (done by the program itself)
@@ -70,6 +93,7 @@ echo ============================================================
 echo  %M_END1%
 echo  %M_END2%
 echo ============================================================
+uv run --no-project --quiet informe.py install ok "%AUTO_CDLC_INSTALL_LOG%"
 pause
 exit /b 0
 
@@ -77,6 +101,8 @@ exit /b 0
 echo.
 echo %M_ERR1%
 echo https://github.com/fesaje/auto-cdlc/issues
+where uv >nul 2>nul
+if not errorlevel 1 uv run --no-project --quiet informe.py install error "%AUTO_CDLC_INSTALL_LOG%"
 pause
 exit /b 1
 

@@ -22,7 +22,7 @@ type Opciones =
 
 let uso () =
     eprintfn "Uso: cdlc-pack <proyecto.rs2dlc> [--salida CARPETA] [--wwise RUTA\\WwiseConsole.exe]"
-    eprintfn "                 [--mac] [--sin-dd] [--autor NOMBRE]"
+    eprintfn "                 [--mac | --solo-mac] [--sin-dd] [--autor NOMBRE]"
     eprintfn "Sin --salida, el .psarc se deja junto al proyecto."
 
 let rec leerArgs (args: string list) (o: Opciones) =
@@ -31,6 +31,7 @@ let rec leerArgs (args: string list) (o: Opciones) =
     | "--salida" :: v :: resto -> leerArgs resto { o with Salida = v }
     | "--wwise" :: v :: resto -> leerArgs resto { o with Wwise = Some v }
     | "--mac" :: resto -> leerArgs resto { o with Plataformas = [ PC; Mac ] }
+    | "--solo-mac" :: resto -> leerArgs resto { o with Plataformas = [ Mac ] }
     | "--sin-dd" :: resto -> leerArgs resto { o with GenerarDD = false }
     | "--autor" :: v :: resto -> leerArgs resto { o with Autor = v }
     | v :: resto when not (v.StartsWith "--") && o.Proyecto = "" -> leerArgs resto { o with Proyecto = v }

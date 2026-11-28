@@ -45,7 +45,10 @@ AQUI = Path(__file__).resolve().parent
 VERSION = "0.5.6"
 REPO = "https://github.com/fesaje/auto-cdlc"
 UA = f"auto-cdlc/{VERSION} (+{REPO})"
-ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"  # voluntary results server (Cloudflare Worker); config.txt: upload_server
+ENVIOS_URL = "https://auto-cdlc-envios.auto-cdlc.workers.dev"
+# Windows, Linux (Rocksmith through Steam/Proton, Wwise through Wine) and macOS (beta, Apple Silicon)
+SISTEMA = "win" if os.name == "nt" else "mac" if sys.platform == "darwin" else "linux"
+EXT_LANZADOR = {"win": ".bat", "linux": ".sh", "mac": ".command"}[SISTEMA]  # voluntary results server (Cloudflare Worker); config.txt: upload_server
 CONF_ENVIO = "preguntar"  # send_results: preguntar (ask) / si (yes) / no
 ENVIAR = False            # decided for each batch
 SIN_INTERNET = False      # --offline or online = no in config.txt
@@ -130,7 +133,16 @@ MARGEN_INICIAL = 0.5       # s de silencio antes del compás COUNT
 BPM_MIN, BPM_MAX = 60, 180
 
 
+def _lanzadores(msg):
+    """Messages name process.bat / auto-cdlc.bat; on Linux and macOS the launchers are .sh / .command."""
+    if SISTEMA == "win" or not isinstance(msg, str) or ".bat" not in msg:
+        return msg
+    msg = msg.replace("process.bat", "./process" + EXT_LANZADOR).replace("auto-cdlc.bat", "./auto-cdlc" + EXT_LANZADOR)
+    return msg.replace("install.bat", "./install" + EXT_LANZADOR).replace("output\\", "output/")
+
+
 def log(msg):
+    msg = _lanzadores(msg)
     try:
         print(msg, flush=True)
     except UnicodeEncodeError:
@@ -2705,14 +2717,24 @@ def _raices_steam():
                 pass
     except ImportError:
         pass
-    raices.append(Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam")
+    if SISTEMA == "win":
+        raices.append(Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Steam")
+    elif SISTEMA == "mac":
+        raices.append(Path.home() / "Library" / "Application Support" / "Steam")
+    else:   # native, Flatpak and Snap Steam
+        h = Path.home()
+        raices += [h / ".steam" / "steam", h / ".local" / "share" / "Steam",
+                   h / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",
+                   h / "snap" / "steam" / "common" / ".local" / "share" / "Steam"]
     return raices
 
 
 def _unidades_locales():
     """Fixed local drives (C:, D:...). Network, CD and USB-stick drives are left out: slow to walk."""
-    if os.name != "nt":
-        return [Path("/")]
+    if SISTEMA == "mac":
+        return [Path.home(), Path("/Volumes")]
+    if SISTEMA == "linux":
+        return [p for p in (Path.home(), Path("/mnt"), Path("/media"), Path("/run/media")) if p.is_dir()]
     import ctypes, string
     unidades = []
     mascara = ctypes.windll.kernel32.GetLogicalDrives()
@@ -2724,7 +2746,8 @@ def _unidades_locales():
 
 SALTAR_AL_BUSCAR = {"windows", "$recycle.bin", "system volume information", "programdata", "appdata",
                     "recovery", "$windows.~bt", "$windows.~ws", "windowsapps", "node_modules", ".git",
-                    "msocache", "perflogs", "intel", "amd", "nvidia"}
+                    "msocache", "perflogs", "intel", "amd", "nvidia", ".cache", ".local", "library", "proc",
+                    ".var", "snap", ".npm", ".cargo", ".rustup", "site-packages", ".venv"}
 
 
 def carpetas_rocksmith(limite_s=30, profundidad=5):
@@ -2743,7 +2766,8 @@ def carpetas_rocksmith(limite_s=30, profundidad=5):
             return
         vistas.add(clave)
         dlc = juego / "dlc"
-        if (juego / "Rocksmith2014.exe").exists() or (dlc.is_dir() and any(dlc.glob("*.psarc"))):
+        if (juego / "Rocksmith2014.exe").exists() or (juego / "Rocksmith2014.app").exists() or \
+                (dlc.is_dir() and any(dlc.glob("*.psarc"))):
             halladas.append(dlc)
 
     for raiz in _raices_steam():
@@ -2810,12 +2834,51 @@ def elegir_carpeta_psarc():
             return d
 
 
+def _copiar_log_a(archivo):
+    """During the install, everything shown also goes to install_log.txt (sent if the user agrees)."""
+    global log
+    original = log
+
+    def log_y_archivo(msg):
+        original(msg)
+        try:
+            with open(archivo, "a", encoding="utf-8") as f:
+                f.write(f"{msg}\n")
+        except Exception:
+            pass
+    log = log_y_archivo
+
+
 def preparar_instalacion(idioma):
     """Called by install.bat once the libraries are in place: migrates an old install, creates config.txt
     in the chosen language, offers Rocksmith's dlc folder for the .psarc files and checks Wwise."""
     global IDIOMA
     IDIOMA = "en" if (idioma or "")[:2].lower() == "en" else "es"
+    if os.environ.get("AUTO_CDLC_INSTALL_LOG"):
+        _copiar_log_a(os.environ["AUTO_CDLC_INSTALL_LOG"])
+        log(f"[4/4] setup: auto-cdlc {VERSION}, {sys.platform}")
     migrar_instalacion()
+    if SISTEMA != "win" and not ruta_cdlc_pack().exists():
+        # install.bat downloads it with PowerShell; on Linux and macOS it's done here
+        nombre = f"cdlc-pack-{rid_cdlc_pack()}.zip"
+        log(T(f"  Descargando cdlc-pack ({nombre}), el compilador de .psarc...",
+              f"  Downloading cdlc-pack ({nombre}), the .psarc builder..."))
+        try:
+            tmp = Path(tempfile.mkdtemp(prefix="auto-cdlc-pack-"))
+            _bajar(f"{REPO}/releases/latest/download/{nombre}", tmp / nombre)
+            instalar_cdlc_pack(tmp / nombre)
+            log("[3/4] cdlc-pack: downloaded")
+        except Exception as ex:
+            log(T(f"  No se ha podido descargar ({ex}). Sin él no se crean los .psarc, solo los proyectos de\n"
+                  f"  DLC Builder. Bájalo de {REPO}/releases y descomprímelo en tools/cdlc-pack",
+                  f"  Download failed ({ex}). Without it no .psarc files are built, only the DLC Builder\n"
+                  f"  projects. Get it from {REPO}/releases and unzip it into tools/cdlc-pack"))
+            log("[3/4] cdlc-pack: download FAILED")
+    if SISTEMA == "linux" and not shutil.which("wine"):
+        log(T("  Aviso: no encuentro Wine. En Linux, Wwise (que convierte el audio) funciona con Wine:\n"
+              "  instálalo con el gestor de paquetes (por ejemplo: sudo apt install wine).",
+              "  Warning: Wine not found. On Linux, Wwise (which converts the audio) runs through Wine:\n"
+              "  install it with your package manager (for example: sudo apt install wine)."))
     if not CONFIG.exists():
         escribir_config({"language": IDIOMA}, IDIOMA)
     elif not leer_configuracion().get("language"):
@@ -2834,6 +2897,14 @@ def preparar_instalacion(idioma):
               "  WARNING: Wwise not found. It's needed to convert the audio to Rocksmith's format.\n"
               "  Install Wwise 2019, 2021, 2022 or 2023 from https://ignition4.customsforge.com/tools/wwise\n"
               "  or put its folder in config.txt, key wwise."))
+        if SISTEMA == "linux":
+            log(T("  En Linux: instala la versión de Windows de Wwise con Wine (en ~/.wine), como pide DLC Builder.\n"
+                  "  Detalles en docs/es/instalacion.md, apartado Linux.",
+                  "  On Linux: install the Windows version of Wwise with Wine (in ~/.wine), as DLC Builder does.\n"
+                  "  Details in docs/en/installation.md, Linux section."))
+        elif SISTEMA == "mac":
+            log(T("  En Mac: instálalo con el Audiokinetic Launcher; tiene que quedar en /Applications/Audiokinetic.",
+                  "  On Mac: install it with the Audiokinetic Launcher; it must end up in /Applications/Audiokinetic."))
     if not conf.get("psarc_folder"):
         elegir_carpeta_psarc()
     return 0
@@ -2896,10 +2967,36 @@ def migrar_instalacion():
         escribir_config({"language": IDIOMA} if IDIOMA == "en" else {}, IDIOMA)
 
 
+def rid_cdlc_pack():
+    """Which cdlc-pack build this machine needs (the release has one zip per system)."""
+    import platform
+    if SISTEMA == "win":
+        return "win-x64"
+    if SISTEMA == "mac":
+        return "osx-arm64" if platform.machine() == "arm64" else "osx-x64"
+    return "linux-x64"
+
+
+def instalar_cdlc_pack(zip_path):
+    """Unzips a cdlc-pack build into tools/cdlc-pack. zipfile doesn't keep the 'executable' bit, so on Linux
+    and macOS it's set again (and macOS's download quarantine is lifted)."""
+    import zipfile
+    destino = AQUI / "tools" / "cdlc-pack"
+    destino.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(destino)
+    if SISTEMA != "win":
+        for f in [destino / "cdlc-pack", *(destino / "Tools").glob("*")]:
+            if f.is_file() and f.suffix not in (".bin", ".zip", ".txt"):
+                f.chmod(0o755)
+        if SISTEMA == "mac":
+            subprocess.run(["xattr", "-dr", "com.apple.quarantine", str(destino)], capture_output=True)
+
+
 def ruta_cdlc_pack():
     if os.environ.get("CDLC_PACK"):
         return Path(os.environ["CDLC_PACK"])
-    return AQUI / "tools" / "cdlc-pack" / ("cdlc-pack.exe" if os.name == "nt" else "cdlc-pack")
+    return AQUI / "tools" / "cdlc-pack" / ("cdlc-pack.exe" if SISTEMA == "win" else "cdlc-pack")
 
 
 WWISE_SUBRUTA = Path("Authoring") / "x64" / "Release" / "bin" / "WwiseConsole.exe"
@@ -2956,13 +3053,24 @@ def buscar_wwise(configurado=None):
         if base:
             b = Path(base.strip().strip('"'))
             candidatas += [b, b / WWISE_SUBRUTA]
-    for pf in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")):
+    if SISTEMA == "win":
+        sitios = [os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")]
+    elif SISTEMA == "mac":
+        sitios = ["/Applications"]
+    else:   # the Windows Wwise, installed with Wine (what DLC Builder does on Linux)
+        prefijo = Path(os.environ.get("WINEPREFIX") or Path.home() / ".wine") / "drive_c"
+        sitios = [str(prefijo / "Program Files (x86)"), str(prefijo / "Program Files")]
+    for pf in sitios:
         if pf and (Path(pf) / "Audiokinetic").is_dir():
             for d in sorted((Path(pf) / "Audiokinetic").glob("Wwise*"), reverse=True):
                 candidatas.append(d / WWISE_SUBRUTA)
+                candidatas.append(d / "Wwise.app" / "Contents" / "Tools" / "WwiseConsole.sh")   # macOS
+    for base in (configurado, os.environ.get("WWISEROOT")):    # a Mac folder given in the configuration
+        if base:
+            candidatas.append(Path(base.strip().strip('"')) / "Wwise.app" / "Contents" / "Tools" / "WwiseConsole.sh")
     vistas = set()
     for c in candidatas:
-        if c.is_file() and c.name.lower() == "wwiseconsole.exe" and str(c).lower() not in vistas:
+        if c.is_file() and c.name.lower() in ("wwiseconsole.exe", "wwiseconsole.sh") and str(c).lower() not in vistas:
             vistas.add(str(c).lower())
             v = version_wwise(c)
             if v is None or v in WWISE_VALIDAS:
@@ -3008,6 +3116,8 @@ def compilar_psarc(proyecto, carpeta, wwise=None):
     args = [str(exe), str(proyecto), "--salida", str(carpeta)]
     if wwise:
         args += ["--wwise", wwise]
+    if SISTEMA == "mac":
+        args += ["--solo-mac"]          # Rocksmith for Mac loads *_m.psarc
     if DD_MODO == "ninguna":
         args += ["--sin-dd"]
     t0 = time.time()
@@ -3531,7 +3641,8 @@ def _bajar_codigo(rel, destino):
     tag = rel.get("tag_name", "")
     urls = [rel.get("zipball_url")]
     urls += [a["browser_download_url"] for a in rel.get("assets", [])
-             if a.get("name", "").endswith("-windows.zip") and a.get("browser_download_url")]
+             if a.get("name", "").endswith(f"-{ {'win': 'windows'}.get(SISTEMA, SISTEMA)}.zip")
+             and a.get("browser_download_url")]
     urls.append(f"{REPO}/archive/refs/tags/{tag}.zip")
     error = None
     for url in [u for u in urls if u]:
@@ -3626,7 +3737,15 @@ def comprobar_actualizacion(preguntar):
             if rel_path.as_posix() in BATS_EN_MARCHA:
                 dst = AQUI / (rel_path.name + ".nuevo")   # process.bat swaps it in once this program exits
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(org, dst)
+            if SISTEMA == "win":
+                shutil.copy2(org, dst)
+            else:
+                # a new file swapped in, never written over: the running .sh keeps reading its old copy
+                tmp_dst = dst.with_name(dst.name + ".tmp-upd")
+                shutil.copy2(org, tmp_dst)
+                if dst.suffix in (".sh", ".command"):
+                    tmp_dst.chmod(0o755)
+                os.replace(tmp_dst, dst)
         plantilla = raiz / "templates" / f"config.{'en' if IDIOMA == 'en' else 'es'}.txt"
         if CONFIG.exists() and plantilla.exists():
             nuevas = fusionar_configuracion(CONFIG, plantilla)
@@ -3634,15 +3753,17 @@ def comprobar_actualizacion(preguntar):
                 log(T("Opciones nuevas añadidas a config.txt: ", "New options added to config.txt: ")
                     + ", ".join(nuevas))
         # the compiler is only downloaded when the release has a different one from yours
-        if os.name == "nt":
-            asset = next((a for a in rel.get("assets", []) if a.get("name") == "cdlc-pack-win-x64.zip"), None)
-            marca = AQUI / "tools" / "cdlc-pack" / ".release"
-            if asset and (not marca.exists() or marca.read_text().strip() != str(asset.get("updated_at"))):
-                log(T("Actualizando cdlc-pack...", "Updating cdlc-pack..."))
-                _bajar(asset["browser_download_url"], tmp / "pack.zip")
-                with zipfile.ZipFile(tmp / "pack.zip") as z:
-                    z.extractall(AQUI / "tools" / "cdlc-pack")
-                marca.write_text(str(asset.get("updated_at")))
+        nombre_pack = f"cdlc-pack-{rid_cdlc_pack()}.zip"
+        asset = next((a for a in rel.get("assets", []) if a.get("name") == nombre_pack), None)
+        marca = AQUI / "tools" / "cdlc-pack" / ".release"
+        # the asset is attached again to every release, so it's compared by content (digest), not by date
+        huella = str(asset.get("digest") or asset.get("size")) if asset else ""
+        anterior = marca.read_text().strip() if marca.exists() else ""
+        if asset and anterior != huella and not (anterior.startswith("20") and not asset.get("digest")):
+            log(T("Actualizando cdlc-pack...", "Updating cdlc-pack..."))
+            _bajar(asset["browser_download_url"], tmp / "pack.zip")
+            instalar_cdlc_pack(tmp / "pack.zip")
+            marca.write_text(huella)
     except Exception as ex:
         log(T(f"No se ha podido actualizar ({ex}). Sigue la versión {VERSION}; puedes bajar la nueva de {REPO}/releases",
               f"Couldn't update ({ex}). Staying on {VERSION}; you can download the new one from {REPO}/releases"))
@@ -3770,9 +3891,9 @@ def main():
         COMPILAR = False
     if COMPILAR:
         CARPETA_PSARC.mkdir(parents=True, exist_ok=True)
-        if os.name == "nt" and not WWISE and WWISE_NO_VALIDAS:
+        if COMPILAR and not WWISE and WWISE_NO_VALIDAS:
             log(T("AVISO: ", "WARNING: ") + texto_wwise_no_valida())
-        elif os.name == "nt" and not WWISE:
+        elif COMPILAR and not WWISE:
             log(T("AVISO: no encuentro Wwise (WwiseConsole.exe), así que no se podrán crear los .psarc.\n"
                   "  Pon en config.txt, clave wwise, la carpeta de Wwise o la ruta de WwiseConsole.exe.",
                   "WARNING: Wwise (WwiseConsole.exe) not found, so the .psarc files can't be built.\n"
@@ -3911,9 +4032,40 @@ def main():
           f"Log of this batch (attach it if something goes wrong): {registro.ruta.name}"))
     if COMPILAR:
         log(T(f"Los .psarc están en: {CARPETA_PSARC}", f"The .psarc files are in: {CARPETA_PSARC}"))
+    informar_problemas_tanda(registro, len(cola), ok, fallos)
     if not _ENVIO_FALLIDO[0]:
         reenviar_pendientes()
     mover_entradas(preguntas, rutas_ok, rutas_descartadas)
+
+
+def _informe_sistema(etapa, estado, resumen, registro_txt=""):
+    """System report through informe.py (anonymous; same consent as the song results)."""
+    if not (ENVIAR and ENVIOS_URL):
+        return
+    try:
+        import informe
+        if informe.enviar(etapa, estado, resumen, registro_txt, url=ENVIOS_URL):
+            log(T("  (informe del problema enviado, gracias)", "  (problem report sent, thank you)"))
+    except Exception:
+        pass
+
+
+def informar_problemas_tanda(registro, total, ok, fallos):
+    """When a batch goes wrong as a whole (no .psarc at all, every song failed), the log goes with a
+    system report: that's usually the install (Wwise, cdlc-pack), not the songs."""
+    problemas = []
+    if total and len(fallos) == total:
+        problemas.append(T(f"las {total} canciones han fallado", f"all {total} songs failed"))
+    if ok and len(SIN_PSARC) >= ok:
+        motivos = sorted({(e or "?")[:120] for _, e in SIN_PSARC})
+        problemas.append(T("ningún .psarc: ", "no .psarc at all: ") + " / ".join(motivos[:3]))
+    if not problemas:
+        return
+    try:
+        texto = registro.ruta.read_text(encoding="utf-8")
+    except Exception:
+        texto = ""
+    _informe_sistema("batch", "error", "; ".join(problemas), texto)
 
 
 # ---------------- regenerating a processed song ----------------
@@ -4094,7 +4246,7 @@ def reempaquetar(entradas, salida=None):
     if not ruta_cdlc_pack().exists():
         log(T(f"No encuentro {ruta_cdlc_pack()}.", f"{ruta_cdlc_pack()} not found."))
         return 1
-    if os.name == "nt" and not WWISE:
+    if not WWISE:
         log(texto_wwise_no_valida() if WWISE_NO_VALIDAS else
             T("No encuentro Wwise: hace falta para crear los .psarc. Pon su carpeta en config.txt, clave wwise.",
               "Wwise not found: it's needed to build the .psarc files. Set its folder in config.txt, key wwise."))
@@ -4182,4 +4334,13 @@ def mover_entradas(preguntar, hechas, descartadas):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as ex:
+        import traceback
+        traza = traceback.format_exc()
+        log(T(f"\nERROR: {ex}\n", f"\nERROR: {ex}\n") + traza)
+        _informe_sistema("batch", "error", f"{type(ex).__name__}: {ex}"[:300], traza)
+        raise SystemExit(1)

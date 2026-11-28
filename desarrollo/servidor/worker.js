@@ -17,11 +17,26 @@ function esAdmin(request, env) {
 }
 
 // Aviso por Telegram de cada envío (opcional: secretos TELEGRAM_TOKEN y TELEGRAM_CHAT_ID)
+function textoSistema(datos) {
+  // informes de instalación y de tanda (tipo "sistema"): sistema operativo, qué se encontró y el error
+  const s = datos.sistema || {};
+  const ok = datos.estado === "ok";
+  const etapa = { install: "INSTALACIÓN", batch: "TANDA", update: "ACTUALIZACIÓN" }[datos.etapa] || String(datos.etapa || "?").toUpperCase();
+  const wwise = (s.wwise || []).join(", ") || "sin Wwise";
+  return [
+    `${ok ? "🛠️" : "🧯"} auto-cdlc ${datos.version || "?"} · ${etapa} ${ok ? "OK" : "ERROR"}`,
+    `${s.so || "?"} ${s.so_version || ""} ${s.maquina || ""} · Python ${s.python || "?"}`.trim(),
+    `${wwise} · cdlc-pack: ${(s.cdlc_pack || []).length ? "sí" : "no"}`,
+    String(datos.resumen || "").slice(0, 300),
+    `instalación ${String(datos.instalacion || "?").slice(0, 8)} · ${datos.idioma || "?"}`,
+  ].filter(Boolean).join("\n");
+}
+
 async function avisarTelegram(env, datos, clave) {
   if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT_ID) return;
   const c = datos.cancion || {};
   const ok = c.estado === "ok";
-  const texto = [
+  const texto = datos.tipo === "sistema" ? textoSistema(datos) : [
     `${ok ? "🎸" : "⚠️"} auto-cdlc ${datos.version || "?"} · ${ok ? "OK" : "ERROR"}`,
     String(c.archivo || "?").slice(0, 200),
     String(c.resumen || "").slice(0, 300),
@@ -65,13 +80,14 @@ async function recibir(request, env, ctx) {
 
   const ahora = new Date();
   const dia = ahora.toISOString().slice(0, 10);
-  const clave = `envios/${dia}/${ahora.toISOString().replace(/[:.]/g, "-")}_${crypto.randomUUID().slice(0, 8)}.json.gz`;
+  const prefijo = datos.tipo === "sistema" ? `sistema-${String(datos.etapa || "x").replace(/[^a-z]/gi, "")}_` : "";
+  const clave = `envios/${dia}/${prefijo}${ahora.toISOString().replace(/[:.]/g, "-")}_${crypto.randomUUID().slice(0, 8)}.json.gz`;
   await env.ENVIOS.put(clave, cuerpo, {
     httpMetadata: { contentType: "application/gzip" },
     customMetadata: {
       version: String(datos.version || "").slice(0, 20),
       instalacion: String(datos.instalacion || "").slice(0, 40),
-      estado: String((datos.cancion || {}).estado || "").slice(0, 20),
+      estado: String(datos.tipo === "sistema" ? `${datos.etapa}:${datos.estado}` : (datos.cancion || {}).estado || "").slice(0, 20),
     },
   });
   ctx.waitUntil(avisarTelegram(env, datos, clave));

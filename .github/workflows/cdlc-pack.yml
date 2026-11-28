@@ -1,0 +1,94 @@
+# Builds cdlc-pack (tools/cdlc-pack/codigo, on top of Rocksmith2014.NET) for Windows, Linux and macOS and
+# leaves the four zips in the "cdlc-pack-bin" pre-release, where release.yml takes them from.
+# Runs when the cdlc-pack source or this file changes.
+name: cdlc-pack
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/cdlc-pack/codigo/**", ".github/workflows/cdlc-pack.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: cdlc-pack
+
+env:
+  RSNET_COMMIT: 4cf3325174e13f1dc5ce997e7663b2851c6afcce   # Rocksmith2014.NET (iminashi), MIT
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, os: ubuntu-latest }
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: osx-arm64, os: macos-latest }
+          - { rid: osx-x64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: iminashi/Rocksmith2014.NET
+          ref: ${{ env.RSNET_COMMIT }}
+          path: rsnet
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish
+        run: |
+          cp -r tools/cdlc-pack/codigo rsnet/samples/CdlcPack
+          dotnet publish rsnet/samples/CdlcPack -c Release -r ${{ matrix.rid }} --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true -o out
+
+      - name: Package
+        run: |
+          cd out
+          rm -f *.pdb
+          cp ../rsnet/LICENSE LICENCIA-Rocksmith2014.NET.txt
+          if [ "${{ matrix.rid }}" != "win-x64" ]; then
+            chmod +x cdlc-pack Tools/ww2ogg Tools/revorb 2>/dev/null || true
+          fi
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # ad-hoc signature: Apple Silicon refuses to run unsigned binaries
+            for f in cdlc-pack Tools/ww2ogg Tools/revorb; do [ -f "$f" ] && codesign --force -s - "$f"; done
+          fi
+          ls -la . Tools
+          zip -qry "../cdlc-pack-${{ matrix.rid }}.zip" .
+
+      - name: Smoke test
+        if: matrix.rid == 'linux-x64' || matrix.rid == 'osx-arm64'
+        run: ./out/cdlc-pack 2>&1 | head -5 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cdlc-pack-${{ matrix.rid }}
+          path: cdlc-pack-${{ matrix.rid }}.zip
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Upload to the cdlc-pack-bin pre-release
+        run: |
+          ls -la dist
+          if ! gh release view cdlc-pack-bin >/dev/null 2>&1; then
+            gh release create cdlc-pack-bin --prerelease --target "$GITHUB_SHA" \
+              --title "cdlc-pack builds (used by the releases)" \
+              --notes "cdlc-pack for each system, built by .github/workflows/cdlc-pack.yml. Download auto-cdlc from the latest release instead."
+          fi
+          gh release upload cdlc-pack-bin dist/*.zip --clobber
