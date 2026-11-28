@@ -2,7 +2,7 @@
 
 # 🎸 auto-cdlc
 
-**Turn your mp3s into bass CDLC for Rocksmith 2014, on your own PC, for free.**
+**Automatic Rocksmith 2014 CDLC creator: turn your mp3s into playable bass custom songs (`.psarc`), on your own PC, for free.**
 
 [![Latest release](https://img.shields.io/github/v/release/fesaje/auto-cdlc?label=release&color=2ea44f)](https://github.com/fesaje/auto-cdlc/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/fesaje/auto-cdlc/total?color=blue)](https://github.com/fesaje/auto-cdlc/releases)
@@ -18,7 +18,9 @@
 
 </div>
 
-Put your songs in a folder, run it and get `.psarc` files ready to play bass in Rocksmith 2014 Remastered.
+Make your own **Rocksmith CDLC** from the songs you already have: put your mp3s in a folder, run it and get
+`.psarc` custom songs ready to play bass in Rocksmith 2014 Remastered, with tab, dynamic difficulty, tone,
+lyrics and album art.
 Everything runs locally with open-source models: no accounts, no per-song fees, and your music is never
 uploaded anywhere.
 
@@ -120,6 +122,9 @@ attach the **batch log** (`output\log_….txt`). English or Spanish, both welcom
 [torchcrepe](https://github.com/maxrmorrison/torchcrepe) ·
 [LRCLIB](https://lrclib.net) ·
 [Textual](https://github.com/Textualize/textual). Full list and licences in [THIRD_PARTY.md](THIRD_PARTY.md).
+
+<sub>Searching for: Rocksmith 2014 CDLC creator · make your own CDLC · custom songs from mp3 · automatic bass
+tab · psarc · Rocksmith bass tabs · free alternative to paid CDLC generators.</sub>
 
 ## ⚖️ Legal notice and licence
 

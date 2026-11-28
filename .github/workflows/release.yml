@@ -54,6 +54,8 @@ jobs:
         if: steps.v.outputs.skip != '1'
         run: |
           VER=${{ steps.v.outputs.version }}
-          gh release create "v$VER" --title "v$VER" --notes-file "${{ steps.v.outputs.notes }}" \
+          # optional first line in the notes: <!-- title: Batch screen -->  ->  "v0.5.5 – Batch screen"
+          TITULO=$(sed -n '1s/^<!-- *title: *\(.*[^ ]\) *-->$/\1/p' "${{ steps.v.outputs.notes }}")
+          gh release create "v$VER" --title "v$VER${TITULO:+ – $TITULO}" --notes-file "${{ steps.v.outputs.notes }}" \
             --target "$GITHUB_SHA" --latest \
             "dist/auto-cdlc-$VER-windows.zip" dist/cdlc-pack-win-x64.zip

@@ -1,6 +1,7 @@
 Release notes, one file per version: `vX.Y.Z.md`, with `X.Y.Z` = `VERSION` in `auto_cdlc.py`.
 
-Adding the file to `main` publishes the release (see `.github/workflows/release.yml`). Format:
+Adding the file to `main` publishes the release (see `.github/workflows/release.yml`). An optional first line
+`<!-- title: Batch screen -->` makes the release title "vX.Y.Z – Batch screen" (it helps people find it). Format:
 "**English** | [Español](#español)", "### Changes", "### Install / update", then "## Español"
 (two hashes: the updater looks for it), "### Cambios", "### Instalar / actualizar".
 

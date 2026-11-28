@@ -2,7 +2,7 @@
 
 # 🎸 auto-cdlc
 
-**De mp3 a CDLC de bajo para Rocksmith 2014, en tu PC y gratis.**
+**Creador automático de CDLC para Rocksmith 2014: convierte tus mp3 en canciones personalizadas de bajo (`.psarc`), en tu PC y gratis.**
 
 [![Última versión](https://img.shields.io/github/v/release/fesaje/auto-cdlc?label=versi%C3%B3n&color=2ea44f)](https://github.com/fesaje/auto-cdlc/releases/latest)
 [![Descargas](https://img.shields.io/github/downloads/fesaje/auto-cdlc/total?label=descargas&color=blue)](https://github.com/fesaje/auto-cdlc/releases)
@@ -18,8 +18,9 @@
 
 </div>
 
-Metes tus canciones en una carpeta, lo ejecutas y sales con archivos `.psarc` listos para tocar el bajo en
-Rocksmith 2014 Remastered. Todo se calcula en local con modelos de código abierto: sin cuentas, sin pagar
+Crea tus propios **CDLC de Rocksmith** con las canciones que ya tienes: metes tus mp3 en una carpeta, lo
+ejecutas y sales con canciones personalizadas `.psarc` listas para tocar el bajo en Rocksmith 2014
+Remastered, con tablatura, dificultad dinámica, tono, letra y carátula. Todo se calcula en local con modelos de código abierto: sin cuentas, sin pagar
 por canción y sin subir tu música a ningún sitio.
 
 ## ✨ Qué te da
@@ -123,6 +124,10 @@ adjunta el **registro de la tanda** (`output\log_….txt`). En español o en ing
 [torchcrepe](https://github.com/maxrmorrison/torchcrepe) ·
 [LRCLIB](https://lrclib.net) ·
 [Textual](https://github.com/Textualize/textual). Lista completa y licencias en [TERCEROS.md](TERCEROS.md).
+
+<sub>Si buscabas: crear CDLC para Rocksmith 2014 · hacer tus propios CDLC · canciones personalizadas desde
+mp3 · tablatura de bajo automática · psarc · CDLC en español · alternativa gratuita a los generadores de
+CDLC de pago.</sub>
 
 ## ⚖️ Aviso legal y licencia
 
